@@ -203,6 +203,7 @@ export async function transformPrototype(
       venue: p.venue,
       published,
       authorIds: p.authors,
+      partners: p.partners ?? [],
       questionIds: p.addresses,
       gapIds: p.gaps,
       workIds: sorted(workIdsByPaper.get(p.id)),

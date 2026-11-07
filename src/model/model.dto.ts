@@ -36,6 +36,13 @@ export class GradeCountsDto implements M.GradeCounts {
   ungraded!: number;
 }
 
+export class CollaborationCountsDto implements M.CollaborationCounts {
+  /** Papers written by the lab alone. */
+  unilateral!: number;
+  /** Papers written with at least one partner lab. */
+  joint!: number;
+}
+
 export class TopicStatsDto implements M.TopicStats {
   questions!: number;
   gaps!: number;
@@ -47,6 +54,8 @@ export class TopicStatsDto implements M.TopicStats {
   fte!: number;
   /** Paper grade roll-up. */
   grades!: GradeCountsDto;
+  /** Unilateral vs. joint papers; the two sum to `papers`. */
+  collaboration!: CollaborationCountsDto;
 }
 
 export class TopicBudgetDto {
@@ -132,6 +141,8 @@ export class PaperDto implements M.Paper {
   /** YYYY-MM-DD */
   published!: string;
   authorIds!: string[];
+  /** Outside labs the paper was written with; empty for unilateral work. */
+  partners!: string[];
   questionIds!: string[];
   gapIds!: string[];
   workIds!: string[];

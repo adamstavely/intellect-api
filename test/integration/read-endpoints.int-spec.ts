@@ -61,6 +61,7 @@ describe('read endpoints', () => {
           { bin: 4, topics: 3, atRisk: 0 },
         ],
         papersInPeriod: 2,
+        collaborationInPeriod: { unilateral: 1, joint: 1 },
         readsInPeriod: viewsYtd,
       });
       expect(body.gapsCovered).toBeCloseTo(4 / 11, 2);
@@ -103,6 +104,7 @@ describe('read endpoints', () => {
         id: 't-carbon',
         team: { id: 'team-energy-and-materials', name: 'Energy & Materials' },
         center: { id: 'sl-energy' },
+        stats: { papers: 1, collaboration: { unilateral: 0, joint: 1 } },
         people: [
           { person: { id: 'rb' }, fte: 0.6 },
           { person: { id: 'sa' }, fte: 0.5 },
@@ -193,7 +195,7 @@ describe('read endpoints', () => {
       expect(body.centers).toHaveLength(3);
       const intel = (body.centers as Body[]).find((c) => c.id === 'sl-intel')!;
       expect(intel.teams.map((t: Body) => t.id).sort()).toEqual(['team-autonomy', 'team-cognitive-systems']);
-      expect(intel.rollup).toMatchObject({ topics: 4, healthMix: { healthy: 3, atRisk: 1 } });
+      expect(intel.rollup).toMatchObject({ topics: 4, healthMix: { healthy: 3, atRisk: 1 }, papers: 2, collaboration: { unilateral: 1, joint: 1 } });
       expect(body.otherTeams).toEqual([]);
     });
 

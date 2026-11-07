@@ -1209,6 +1209,23 @@
           "atRisk"
         ]
       },
+      "CollaborationCountsDto": {
+        "type": "object",
+        "properties": {
+          "unilateral": {
+            "type": "number",
+            "description": "Papers written by the lab alone."
+          },
+          "joint": {
+            "type": "number",
+            "description": "Papers written with at least one partner lab."
+          }
+        },
+        "required": [
+          "unilateral",
+          "joint"
+        ]
+      },
       "MonthlyReadsDto": {
         "type": "object",
         "properties": {
@@ -1284,6 +1301,14 @@
           "papersInPeriod": {
             "type": "number"
           },
+          "collaborationInPeriod": {
+            "description": "The period's papers split into unilateral and joint; the two sum to `papersInPeriod`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CollaborationCountsDto"
+              }
+            ]
+          },
           "readsInPeriod": {
             "type": "number"
           },
@@ -1318,6 +1343,7 @@
           "healthMix",
           "binMix",
           "papersInPeriod",
+          "collaborationInPeriod",
           "readsInPeriod",
           "downloadsInPeriod",
           "citationsInPeriod",
@@ -1423,6 +1449,14 @@
                 "$ref": "#/components/schemas/GradeCountsDto"
               }
             ]
+          },
+          "collaboration": {
+            "description": "Unilateral vs. joint papers; the two sum to `papers`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CollaborationCountsDto"
+              }
+            ]
           }
         },
         "required": [
@@ -1433,7 +1467,8 @@
           "work",
           "papers",
           "fte",
-          "grades"
+          "grades",
+          "collaboration"
         ]
       },
       "TopicSummaryDto": {
@@ -2010,6 +2045,13 @@
               "type": "string"
             }
           },
+          "partners": {
+            "description": "Outside labs the paper was written with; empty for unilateral work.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -2060,6 +2102,7 @@
           "venue",
           "published",
           "authorIds",
+          "partners",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2362,6 +2405,13 @@
               "type": "string"
             }
           },
+          "partners": {
+            "description": "Outside labs the paper was written with; empty for unilateral work.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -2429,6 +2479,7 @@
           "venue",
           "published",
           "authorIds",
+          "partners",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2461,6 +2512,13 @@
             "description": "YYYY-MM-DD"
           },
           "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "partners": {
+            "description": "Outside labs the paper was written with; empty for unilateral work.",
             "type": "array",
             "items": {
               "type": "string"
@@ -2541,6 +2599,7 @@
           "venue",
           "published",
           "authorIds",
+          "partners",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2688,6 +2747,13 @@
               "type": "string"
             }
           },
+          "partners": {
+            "description": "Outside labs the paper was written with; empty for unilateral work.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -2793,6 +2859,7 @@
           "venue",
           "published",
           "authorIds",
+          "partners",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2855,6 +2922,18 @@
           },
           "budget": {
             "$ref": "#/components/schemas/RollupBudgetDto"
+          },
+          "papers": {
+            "type": "number",
+            "description": "Papers published across the unit's topics."
+          },
+          "collaboration": {
+            "description": "How many of those papers were unilateral vs. joint; the two sum to `papers`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CollaborationCountsDto"
+              }
+            ]
           }
         },
         "required": [
@@ -2864,7 +2943,9 @@
           "openGaps",
           "coverage",
           "fte",
-          "budget"
+          "budget",
+          "papers",
+          "collaboration"
         ]
       },
       "OrgTopicDto": {

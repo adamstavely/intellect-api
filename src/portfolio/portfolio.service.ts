@@ -48,7 +48,14 @@ export class PortfolioService {
       }),
       this.es.count({ index: ALIASES.questions, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'answered' } }] } } }),
       this.es.count({ index: ALIASES.work, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'complete' } }] } } }),
-      this.es.count({ index: ALIASES.papers, query: { bool: { filter: [byTopicId, { range: { published: { gte: period.from, lte: period.to } } }] } } }),
+      this.es.search({
+        index: ALIASES.papers,
+        size: 0,
+        track_total_hits: true,
+        query: { bool: { filter: [byTopicId, { range: { published: { gte: period.from, lte: period.to } } }] } },
+        // An empty partners list isn't indexed, so `exists` matches exactly the joint papers.
+        aggs: { joint: { filter: { exists: { field: 'partners' } } } },
+      }),
       this.es.search({
         index: ALIASES.paperMetrics,
         size: 0,
@@ -71,6 +78,9 @@ export class PortfolioService {
     const t = topics.aggregations as Record<string, Value & Buckets<{ atRisk: { doc_count: number } }>>;
     const health = new Map(t.health.buckets.map((b) => [b.key, b.doc_count]));
     const openGaps = num(t.openGaps);
+    const total = (r: { hits: { total?: number | { value: number } } }) => (typeof r.hits.total === 'number' ? r.hits.total : (r.hits.total?.value ?? 0));
+    const papersInPeriod = total(papers);
+    const joint = (papers.aggregations as { joint: { doc_count: number } }).joint.doc_count;
     const r = reads.aggregations as Record<string, Value>;
     const months = new Map(
       (trend.aggregations as Record<string, Buckets<{ views: Value; downloads: Value }>>).months.buckets.map((b) => [b.key_as_string ?? String(b.key), b]),
@@ -78,7 +88,7 @@ export class PortfolioService {
 
     return {
       period: { label: period.label, from: period.from, to: period.to },
-      topics: typeof topics.hits.total === 'number' ? topics.hits.total : (topics.hits.total?.value ?? 0),
+      topics: total(topics),
       activeQuestions: questions.count,
       openGaps,
       gapsCovered: openGaps ? num(t.coverage, 3) : 1,
@@ -89,7 +99,8 @@ export class PortfolioService {
         const b = t.bins.buckets.find((x) => Number(x.key) === bin);
         return { bin, topics: b?.doc_count ?? 0, atRisk: b?.atRisk.doc_count ?? 0 };
       }),
-      papersInPeriod: papers.count,
+      papersInPeriod,
+      collaborationInPeriod: { unilateral: papersInPeriod - joint, joint },
       readsInPeriod: num(r.views),
       downloadsInPeriod: num(r.downloads),
       citationsInPeriod: num(r.citations),

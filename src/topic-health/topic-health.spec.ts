@@ -135,7 +135,7 @@ describe('topicStats', () => {
   it('rolls up counts, open gaps, coverage and fte', () => {
     const stats = topicStats({
       questions: 4,
-      papers: [{ grade: 'excellent' }, { grade: null }],
+      papers: [{ grade: 'excellent', partners: ['NREL'] }, { grade: null, partners: [] }],
       fte: 1.2999999,
       gaps: [gap('a'), gap('b'), gap('c'), gap('d', 'high', 'closed')],
       work: [work(['a']), work(['b'], 'review')],
@@ -150,6 +150,7 @@ describe('topicStats', () => {
       papers: 2,
       fte: 1.3,
       grades: { outstanding: 0, excellent: 1, satisfactory: 0, dissatisfactory: 0, ungraded: 1 },
+      collaboration: { unilateral: 1, joint: 1 },
     });
   });
 });

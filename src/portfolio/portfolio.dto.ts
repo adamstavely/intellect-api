@@ -1,4 +1,5 @@
 import { IsOptional, IsString } from 'class-validator';
+import { CollaborationCountsDto } from '../model/model.dto';
 import { HealthMixDto, RollupBudgetDto } from '../org/org.dto';
 
 export class PortfolioQueryDto {
@@ -42,6 +43,8 @@ export class PortfolioSummaryDto {
   healthMix!: HealthMixDto;
   binMix!: BinMixDto[];
   papersInPeriod!: number;
+  /** The period's papers split into unilateral and joint; the two sum to `papersInPeriod`. */
+  collaborationInPeriod!: CollaborationCountsDto;
   readsInPeriod!: number;
   downloadsInPeriod!: number;
   citationsInPeriod!: number;
