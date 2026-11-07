@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
+import { Clock } from '../common/clock';
 import { getMany, MAX_DOCS, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { OrgUnit, Person, Topic } from '../model/types';
+import { recentPaperCounts } from '../papers/recent-papers';
 import { ScopeService } from '../scope/scope.service';
 import type { OrgCenterDto, OrgDto, OrgTeamDto, OrgTopicDto } from './org.dto';
 import { rollup } from './rollup';
@@ -13,6 +15,7 @@ export class OrgService {
   constructor(
     @Inject(ES_CLIENT) private readonly es: Client,
     private readonly scope: ScopeService,
+    private readonly clock: Clock,
   ) {}
 
   /** Centers → teams → topics with roll-ups. Outside the Chief's view, units with no visible topics are left out. */
@@ -34,13 +37,14 @@ export class OrgService {
       const p = id ? leads.get(id) : undefined;
       return p ? { id: p.id, name: p.name, initials: p.initials } : null;
     };
+    const recent = await recentPaperCounts(this.es, topics.map((t) => t.id), this.clock.today());
     const keep = (n: number) => scope.all || n > 0;
 
     const teams: (OrgTeamDto & { parentId: string | null })[] = units
       .filter((u) => u.kind === 'team')
       .map((u) => {
         const own = topics.filter((t) => t.teamId === u.id);
-        return { id: u.id, name: u.name, code: u.code, parentId: u.parentId, lead: lead(u.leadId), rollup: rollup(own), topics: own.map(toOrgTopic) };
+        return { id: u.id, name: u.name, code: u.code, parentId: u.parentId, lead: lead(u.leadId), rollup: rollup(own, recent), topics: own.map(toOrgTopic) };
       })
       .filter((t) => keep(t.topics.length));
 
@@ -54,7 +58,7 @@ export class OrgService {
           code: u.code,
           focus: u.focus,
           lead: lead(u.leadId),
-          rollup: rollup(own),
+          rollup: rollup(own, recent),
           teams: teams.filter((t) => t.parentId === u.id).map(withoutParent),
         };
       })

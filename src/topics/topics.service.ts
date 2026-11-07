@@ -10,6 +10,7 @@ import { ScopeService } from '../scope/scope.service';
 import { TopicRollupService } from '../topic-health/topic-rollup.service';
 import { fiscalYear, PRIORITY_LABEL, tidy, topicIdFor } from './create-topic';
 import { spineEdges } from './spine';
+import { NO_RECENT_PAPERS, recentPaperCounts } from '../papers/recent-papers';
 import type { CreateTopicDto, SpineDto, TopicDetailDto, TopicsQueryDto, TopicSort, TopicSummaryDto } from './topics.dto';
 
 const SORTS: Record<TopicSort, estypes.SortCombinations[]> = {
@@ -108,16 +109,19 @@ export class TopicsService {
     const topics = sources(
       await this.es.search<Topic>({ index: ALIASES.topics, size: MAX_DOCS, query: { bool: { filter } }, sort: SORTS[q.sort ?? 'risk'] }),
     );
-    const leads = await getMany<Person>(this.es, ALIASES.people, topics.map((t) => t.leadId), ['id', 'name', 'initials']);
+    const [leads, recent] = await Promise.all([
+      getMany<Person>(this.es, ALIASES.people, topics.map((t) => t.leadId), ['id', 'name', 'initials']),
+      recentPaperCounts(this.es, topics.map((t) => t.id), this.clock.today()),
+    ]);
     return topics.map((t) => {
       const lead = leads.get(t.leadId);
-      return { ...t, lead: lead ? personRef(lead) : null };
+      return { ...t, lead: lead ? personRef(lead) : null, recentPapers: recent.get(t.id) ?? NO_RECENT_PAPERS };
     });
   }
 
   async get(user: Person, id: string): Promise<TopicDetailDto> {
     const topic = await this.visibleTopic(user, id);
-    const [units, leads, staffed] = await Promise.all([
+    const [units, leads, staffed, recent] = await Promise.all([
       getMany<OrgUnit>(this.es, ALIASES.orgUnits, [topic.teamId, topic.centerId].filter((x): x is string => !!x)),
       getMany<Person>(this.es, ALIASES.people, [topic.leadId], ['id', 'name', 'initials']),
       this.es.search<Person>({
@@ -125,6 +129,7 @@ export class TopicsService {
         size: MAX_DOCS,
         query: { nested: { path: 'allocations', query: { term: { 'allocations.topicId': id } } } },
       }),
+      recentPaperCounts(this.es, [id], this.clock.today()),
     ]);
     const people = sources(staffed)
       .map((p) => ({ person: personRef(p), fte: p.allocations.filter((a) => a.topicId === id).reduce((s, a) => s + a.fte, 0) }))
@@ -134,7 +139,14 @@ export class TopicsService {
       const u = unitId ? units.get(unitId) : undefined;
       return u ? { id: u.id, name: u.name } : null;
     };
-    return { ...topic, lead: lead ? personRef(lead) : null, team: ref(topic.teamId), center: ref(topic.centerId), people };
+    return {
+      ...topic,
+      lead: lead ? personRef(lead) : null,
+      recentPapers: recent.get(id) ?? NO_RECENT_PAPERS,
+      team: ref(topic.teamId),
+      center: ref(topic.centerId),
+      people,
+    };
   }
 
   /** The whole traceability spine with one msearch across five indices filtered on topicId. */

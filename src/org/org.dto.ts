@@ -1,4 +1,4 @@
-import { CollaborationCountsDto, PersonRefDto } from '../model/model.dto';
+import { CollaborationCountsDto, PersonRefDto, RecentPapersDto } from '../model/model.dto';
 
 export class HealthMixDto {
   healthy!: number;
@@ -16,6 +16,8 @@ export class OrgRollupDto {
   healthMix!: HealthMixDto;
   /** Mean healthScore; null with no topics. */
   avgHealthScore!: number | null;
+  /** The band that mean falls in, by the same thresholds as a topic's; null with no topics. */
+  health!: 'healthy' | 'watch' | 'at-risk' | null;
   openGaps!: number;
   /** Share of open gaps covered by active work, across the unit's topics. 1 when there are none. */
   coverage!: number;
@@ -25,6 +27,14 @@ export class OrgRollupDto {
   papers!: number;
   /** How many of those papers were unilateral vs. joint; the two sum to `papers`. */
   collaboration!: CollaborationCountsDto;
+  /** Papers published last month and so far this month across the unit's topics, counted live. */
+  recentPapers!: RecentPapersDto;
+  /** Work items across the unit's topics (the sum of each topic's `stats.work`). */
+  work!: number;
+  /** Mean topic health per month, oldest first, aligned on the latest month. */
+  trend!: number[];
+  /** Change in that mean health over the momentum lookback, in health points. */
+  momentum!: number;
 }
 
 export class OrgTopicDto {
