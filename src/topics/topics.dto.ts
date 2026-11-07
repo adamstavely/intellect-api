@@ -141,6 +141,14 @@ export class CreateTopicDto {
   @Type(() => CreateTopicBudgetDto)
   budget?: CreateTopicBudgetDto;
 
+  /** Full-time equivalents planned for the topic, 0–20 in steps of 0.1; default 0. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 1 })
+  @Min(0)
+  @Max(20)
+  plannedFte?: number;
+
   /** Opening research questions, owned by the lead. */
   @IsOptional()
   @IsArray()

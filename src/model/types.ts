@@ -83,6 +83,8 @@ export interface Topic {
   tags: string[];
   sponsors: string[];
   budget: { allocated: number; spent: number; fy: string };
+  /** Full-time equivalents the topic is planned to have; `stats.fte` is what people are actually allocated. */
+  plannedFte: number;
   stats: TopicStats;
   momentum: number;
   trend: number[];

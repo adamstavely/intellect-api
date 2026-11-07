@@ -86,6 +86,8 @@ export class TopicDto implements M.Topic {
   tags!: string[];
   sponsors!: string[];
   budget!: TopicBudgetDto;
+  /** Full-time equivalents the topic is planned to have; `stats.fte` is what people are actually allocated. */
+  plannedFte!: number;
   stats!: TopicStatsDto;
   /** Current healthScore minus the score three months ago. */
   momentum!: number;
