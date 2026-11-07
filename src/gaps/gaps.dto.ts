@@ -35,6 +35,8 @@ export class GapTopicRefDto {
   name!: string;
   health!: 'healthy' | 'watch' | 'at-risk';
   healthScore!: number;
+  /** The topic's priority tier, 1 (top) to 4. */
+  bin!: number;
 }
 
 export class GapListItemDto extends GapDto {
@@ -42,4 +44,14 @@ export class GapListItemDto extends GapDto {
   owner!: PersonRefDto | null;
   /** At least one active work item is against this gap. */
   covered!: boolean;
+  /** Active work items against this gap; covered when 1 or more. */
+  activeWork!: number;
+  /** What the work in flight against this gap (anything not complete) has been allocated. */
+  invested!: GapInvestmentDto;
+}
+
+export class GapInvestmentDto {
+  /** Budget allocated, in $M. */
+  budget!: number;
+  fte!: number;
 }
