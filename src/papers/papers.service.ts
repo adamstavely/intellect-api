@@ -8,7 +8,8 @@ import { ALIASES } from '../elastic/indices';
 import type { Citation, Paper, PaperMetrics, Person, Topic } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { TopicRollupService } from '../topic-health/topic-rollup.service';
-import type { GradePaperDto, MetricTotalsDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
+import { firstCitation, firstCitedMonths, median, monthsBetween } from './first-citation';
+import type { FirstCitationQueryDto, FirstCitationSummaryDto, GradePaperDto, MetricTotalsDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
 
 const EMPTY_TOTALS: MetricTotalsDto = { downloads: 0, views: 0, citations: 0, altmetric: 0, mentions: { news: 0, policy: 0, social: 0, patents: 0 } };
 
@@ -140,16 +141,40 @@ export class PapersService {
     return new Map(buckets.map((b) => [b.key, toTotals(b)]));
   }
 
+  /** Time to first citation across the caller's papers, or one topic's. */
+  async firstCitationSummary(user: Person, q: FirstCitationQueryDto): Promise<FirstCitationSummaryDto> {
+    const filter: estypes.QueryDslQueryContainer[] = [await this.scope.filter(user)];
+    if (q.topicId) filter.push({ term: { topicId: q.topicId } });
+    const papers = sources(
+      await this.es.search<Pick<Paper, 'id' | 'published'>>({ index: ALIASES.papers, size: MAX_DOCS, _source: ['id', 'published'], query: { bool: { filter } } }),
+    );
+    const first = await firstCitedMonths(this.es, papers.map((p) => p.id));
+    const lags = papers.filter((p) => first.has(p.id)).map((p) => monthsBetween(p.published, first.get(p.id)!));
+    const today = this.clock.today();
+    const waits = papers.filter((p) => !first.has(p.id)).map((p) => monthsBetween(p.published, today.slice(0, 7)));
+    return {
+      papers: papers.length,
+      cited: lags.length,
+      awaiting: waits.length,
+      medianMonths: median(lags),
+      fastestMonths: lags.length ? Math.min(...lags) : null,
+      slowestMonths: lags.length ? Math.max(...lags) : null,
+      longestWaitMonths: waits.length ? Math.max(...waits) : null,
+    };
+  }
+
   private async decorate(papers: Paper[], totals: Map<string, MetricTotalsDto>): Promise<PaperListItemDto[]> {
-    const [topics, people] = await Promise.all([
+    const [topics, people, first] = await Promise.all([
       getMany<Topic>(this.es, ALIASES.topics, papers.map((p) => p.topicId), ['id', 'name']),
       getMany<Person>(this.es, ALIASES.people, papers.flatMap((p) => p.authorIds), ['id', 'name', 'initials']),
+      firstCitedMonths(this.es, papers.map((p) => p.id)),
     ]);
     return papers.map((p) => ({
       ...p,
       topic: { id: p.topicId, name: topics.get(p.topicId)?.name ?? p.topicId },
       authors: p.authorIds.map((a) => people.get(a)).filter((a): a is Person => !!a).map((a) => ({ id: a.id, name: a.name, initials: a.initials })),
       totals: totals.get(p.id) ?? EMPTY_TOTALS,
+      firstCitation: firstCitation(p.published, first.get(p.id)),
     }));
   }
 }
