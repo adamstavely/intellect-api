@@ -196,6 +196,7 @@ export async function transformPrototype(
     const monthIndex = MONTHS.indexOf(p.month);
     if (monthIndex < 0) throw new Error(`paper ${p.id} has unknown month ${p.month}`);
     const published = `${p.year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+    if (p.initiatedBy && !p.partners?.includes(p.initiatedBy)) throw new Error(`paper ${p.id} was initiated by ${p.initiatedBy}, which isn't one of its partners`);
     papers.push({
       id: p.id,
       topicId: p.topic,
@@ -204,6 +205,7 @@ export async function transformPrototype(
       published,
       authorIds: p.authors,
       partners: p.partners ?? [],
+      initiatedBy: p.initiatedBy ?? null,
       questionIds: p.addresses,
       gapIds: p.gaps,
       workIds: sorted(workIdsByPaper.get(p.id)),
