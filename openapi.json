@@ -103,7 +103,7 @@
             "name": "period",
             "required": false,
             "in": "query",
-            "description": "`ytd` (default), `FY26` or `FY26-Q2` (US federal fiscal year: FY26 starts 2025-10-01).",
+            "description": "`ytd` (default), `FY26`, `FY26-Q2` or a month, `2026-11` (US federal fiscal year: FY26 starts 2025-10-01).",
             "schema": {
               "type": "string"
             }
@@ -486,7 +486,7 @@
             "name": "period",
             "required": false,
             "in": "query",
-            "description": "`ytd` (default), `FY26` or `FY26-Q2`.",
+            "description": "`ytd` (default), `FY26`, `FY26-Q2` or a month, `2026-11`.",
             "schema": {
               "type": "string"
             }
@@ -724,7 +724,7 @@
             "name": "period",
             "required": false,
             "in": "query",
-            "description": "`FY26-Q2`, `FY26` or `ytd` (default).",
+            "description": "`FY26-Q2`, `FY26`, a month (`2026-11`) or `ytd` (default).",
             "schema": {
               "type": "string"
             }
