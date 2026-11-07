@@ -146,6 +146,8 @@ export interface Paper {
   authorIds: string[];
   /** Outside labs the paper was written with. Empty means unilateral; any partner makes it joint. */
   partners: string[];
+  /** Who started a joint paper: one of `partners` when a partner lab came to us, null when we did (and for unilateral work). */
+  initiatedBy: string | null;
   questionIds: string[];
   gapIds: string[];
   workIds: string[];

@@ -139,6 +139,7 @@ export const INDICES: IndexDefinition[] = [
       published: day,
       authorIds: keyword,
       partners: keyword,
+      initiatedBy: keyword,
       questionIds: keyword,
       gapIds: keyword,
       workIds: keyword,

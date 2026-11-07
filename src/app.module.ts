@@ -16,6 +16,8 @@ import { OrgController } from './org/org.controller';
 import { OrgService } from './org/org.service';
 import { PapersController } from './papers/papers.controller';
 import { PapersService } from './papers/papers.service';
+import { PartnersController } from './partners/partners.controller';
+import { PartnersService } from './partners/partners.service';
 import { PeopleController } from './people/people.controller';
 import { PeopleService } from './people/people.service';
 import { PortfolioController } from './portfolio/portfolio.controller';
@@ -44,6 +46,7 @@ import { TopicsService } from './topics/topics.service';
     TopicsController,
     GapsController,
     PapersController,
+    PartnersController,
     OrgController,
     SearchController,
     BriefController,
@@ -55,6 +58,7 @@ import { TopicsService } from './topics/topics.service';
     TopicsService,
     GapsService,
     PapersService,
+    PartnersService,
     OrgService,
     SearchService,
     BriefService,

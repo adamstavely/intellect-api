@@ -640,6 +640,33 @@
         ]
       }
     },
+    "/partners": {
+      "get": {
+        "operationId": "PartnersController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLabsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Partner labs we've published with, in the caller's scope: joint papers, and who started each.",
+        "tags": [
+          "partners"
+        ]
+      }
+    },
     "/org": {
       "get": {
         "operationId": "OrgController_tree",
@@ -2140,6 +2167,11 @@
               "type": "string"
             }
           },
+          "initiatedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who started a joint paper: one of `partners` when a partner lab came to us; null when we did, and for unilateral work."
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -2191,6 +2223,7 @@
           "published",
           "authorIds",
           "partners",
+          "initiatedBy",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2554,6 +2587,11 @@
               "type": "string"
             }
           },
+          "initiatedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who started a joint paper: one of `partners` when a partner lab came to us; null when we did, and for unilateral work."
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -2630,6 +2668,7 @@
           "published",
           "authorIds",
           "partners",
+          "initiatedBy",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2674,6 +2713,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "initiatedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who started a joint paper: one of `partners` when a partner lab came to us; null when we did, and for unilateral work."
           },
           "questionIds": {
             "type": "array",
@@ -2759,6 +2803,7 @@
           "published",
           "authorIds",
           "partners",
+          "initiatedBy",
           "questionIds",
           "gapIds",
           "workIds",
@@ -2959,6 +3004,11 @@
               "type": "string"
             }
           },
+          "initiatedBy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Who started a joint paper: one of `partners` when a partner lab came to us; null when we did, and for unilateral work."
+          },
           "questionIds": {
             "type": "array",
             "items": {
@@ -3073,6 +3123,7 @@
           "published",
           "authorIds",
           "partners",
+          "initiatedBy",
           "questionIds",
           "gapIds",
           "workIds",
@@ -3108,6 +3159,163 @@
         },
         "required": [
           "grade"
+        ]
+      },
+      "PartnerPaperDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "topic": {
+            "$ref": "#/components/schemas/TopicRefDto"
+          },
+          "initiatedBy": {
+            "type": "string",
+            "description": "Who started it, from this lab's side: we did, this lab did, or another partner on the paper did.",
+            "enum": [
+              "us",
+              "partner",
+              "other-partner"
+            ]
+          },
+          "initiator": {
+            "type": "string",
+            "nullable": true,
+            "description": "The lab that started it; null when we did."
+          },
+          "otherPartners": {
+            "description": "The paper's other partner labs.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "citations": {
+            "type": "number",
+            "description": "Lifetime citations and views."
+          },
+          "views": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "venue",
+          "published",
+          "topic",
+          "initiatedBy",
+          "initiator",
+          "otherPartners",
+          "citations",
+          "views"
+        ]
+      },
+      "PartnerLabDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "joint": {
+            "type": "number",
+            "description": "Joint papers written with this lab."
+          },
+          "initiatedByUs": {
+            "type": "number",
+            "description": "Of those, the ones we started with them..."
+          },
+          "initiatedByThem": {
+            "type": "number",
+            "description": "...the ones they started with us..."
+          },
+          "initiatedByOthers": {
+            "type": "number",
+            "description": "...and the ones another partner on the paper started."
+          },
+          "citations": {
+            "type": "number",
+            "description": "Lifetime citations and views of the joint papers."
+          },
+          "views": {
+            "type": "number"
+          },
+          "topics": {
+            "description": "Topics the joint papers are in, by name.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopicRefDto"
+            }
+          },
+          "lastPublished": {
+            "type": "string",
+            "description": "The latest joint paper's publication date, YYYY-MM-DD."
+          },
+          "papers": {
+            "description": "The joint papers, newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartnerPaperDto"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "joint",
+          "initiatedByUs",
+          "initiatedByThem",
+          "initiatedByOthers",
+          "citations",
+          "views",
+          "topics",
+          "lastPublished",
+          "papers"
+        ]
+      },
+      "PartnerLabsDto": {
+        "type": "object",
+        "properties": {
+          "papers": {
+            "type": "number",
+            "description": "Every paper in the caller's scope."
+          },
+          "joint": {
+            "type": "number",
+            "description": "Papers written with at least one partner lab."
+          },
+          "initiatedByUs": {
+            "type": "number",
+            "description": "Joint papers we started."
+          },
+          "initiatedByPartners": {
+            "type": "number",
+            "description": "Joint papers a partner lab started."
+          },
+          "labs": {
+            "description": "Labs we've published with, most joint papers first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PartnerLabDto"
+            }
+          }
+        },
+        "required": [
+          "papers",
+          "joint",
+          "initiatedByUs",
+          "initiatedByPartners",
+          "labs"
         ]
       },
       "OrgRollupDto": {

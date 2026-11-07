@@ -150,7 +150,7 @@
     {
       id:"p1", topic:"t-neuro", title:"Sparse Spiking Networks Approach Dense Accuracy at 40× Lower Energy",
       venue:"Nature Machine Intelligence", year:2025, month:"Nov", authors:["mo","ec","jt"],
-      partners:["Sandia National Laboratories"],
+      partners:["Sandia National Laboratories"], initiatedBy:"Sandia National Laboratories",
       addresses:["q1"], gaps:["g1"],
       reads:{ downloads:18420, views:46100, citations:73, altmetric:284 },
       readTrend:series([200,420,690,1100,1640,2200,2950,3700,4500,5400,6300,7200]),

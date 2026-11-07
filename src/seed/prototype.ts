@@ -76,6 +76,8 @@ export interface ProtoPaper {
   authors: string[];
   /** Outside labs the paper was written with; absent for unilateral work. */
   partners?: string[];
+  /** The partner lab that started a joint paper; absent when we did. */
+  initiatedBy?: string;
   addresses: string[];
   gaps: string[];
   reads: { downloads: number; views: number; citations: number; altmetric: number };

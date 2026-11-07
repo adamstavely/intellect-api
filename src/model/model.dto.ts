@@ -152,6 +152,8 @@ export class PaperDto implements M.Paper {
   authorIds!: string[];
   /** Outside labs the paper was written with; empty for unilateral work. */
   partners!: string[];
+  /** Who started a joint paper: one of `partners` when a partner lab came to us; null when we did, and for unilateral work. */
+  initiatedBy!: string | null;
   questionIds!: string[];
   gapIds!: string[];
   workIds!: string[];
