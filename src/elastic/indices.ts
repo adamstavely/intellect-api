@@ -180,6 +180,36 @@ export const INDICES: IndexDefinition[] = [
     }),
   },
   {
+    // Append-only: the API only ever creates audit documents. Retention belongs to an ILM policy in production.
+    alias: 'audit',
+    version: 1,
+    mappings: strict({
+      id: keyword,
+      at: timestamp,
+      actor: object({ id: keyword, name: keyword, role: keyword, authenticated: { type: 'boolean' } }),
+      action: keyword,
+      method: keyword,
+      route: keyword,
+      path: { type: 'keyword', ignore_above: 2048 },
+      params: { type: 'flattened' },
+      query: { type: 'flattened' },
+      // Kept as given, not indexed: it's evidence, not something to search on.
+      body: { type: 'object', enabled: false },
+      bodyTruncated: { type: 'boolean' },
+      outcome: object({ status: integer, ok: { type: 'boolean' } }),
+      durationMs: integer,
+      ip: keyword,
+      userAgent: { type: 'keyword', ignore_above: 512 },
+    }),
+  },
+  {
+    // Where audit forwarding has got to: the sort values of the last event the webhook accepted.
+    alias: 'audit-cursor',
+    version: 1,
+    // `sort` is [epoch ms, id] exactly as Elasticsearch returned it, kept unindexed so it round-trips into search_after.
+    mappings: strict({ sort: { type: 'object', enabled: false }, updatedAt: timestamp }),
+  },
+  {
     alias: 'topic-health-history',
     version: 1,
     mappings: strict({ topicId: keyword, month, healthScore: integer, coverage: float }),
@@ -200,4 +230,6 @@ export const ALIASES = {
   paperMetrics: 'paper-metrics',
   citations: 'citations',
   topicHealthHistory: 'topic-health-history',
+  audit: 'audit',
+  auditCursor: 'audit-cursor',
 } as const;

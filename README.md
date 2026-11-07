@@ -62,6 +62,37 @@ All scoped to the caller (see Auth below). Full schemas at `/docs`.
 
 Every route except `/health` and `/docs` needs an `X-Intellect-User` header holding a person id from the seed (`hv` is the Chief; `mo`, `pr`, `sa`, `dw`, `lk`, `am` are PIs). `StubAuthGuard` is the only piece real auth replaces. `ScopeService` turns the user into one Elastic filter: the Chief sees every topic, anyone else sees topics they lead or have FTE on.
 
+### Audit trail
+
+Every API request is audited, reads included, along with requests refused by auth or validation. The liveness and readiness probes (`/health`) and the docs (`/docs`) are skipped. Each event records:
+
+- who: person id, name and role, or the claimed id when auth refused it;
+- what: an action such as `PATCH /papers/:id/grade`, plus the route params, query and, for changes, the redacted body;
+- when, and the outcome: status code and duration.
+
+The response carries the event's id as `X-Request-Id`.
+
+Events go to the append-only `audit` index, written in batches so requests don't wait on them. Set a retention ILM policy on `audit-v*` in production.
+
+**Forwarding to an external service.** Set `AUDIT_WEBHOOK_URL` to POST the trail to an HTTPS endpoint. Plain http is accepted only on localhost, for development.
+
+| Variable | Default | |
+|---|---|---|
+| `AUDIT_WEBHOOK_URL` | unset (Elastic only) | Where to POST events |
+| `AUDIT_WEBHOOK_SECRET` | unset | Signs each delivery; set it whenever the URL is set |
+| `AUDIT_FORWARD_INTERVAL_MS` | 5000 | How often to look for new events |
+| `AUDIT_FORWARD_BATCH` | 200 | Most events per POST |
+| `AUDIT_WEBHOOK_TIMEOUT_MS` | 10000 | How long to wait for the endpoint |
+
+Each delivery is `POST {"events":[…]}` with these headers:
+- `X-Intellect-Delivery`: unique per attempt;
+- `X-Intellect-Timestamp`: epoch seconds;
+- `X-Intellect-Signature`: `sha256=` plus the hex HMAC-SHA256 of `"<timestamp>.<body>"` keyed with the secret.
+
+The receiver should verify the signature, reject stale timestamps, and answer 2xx.
+
+Delivery follows a cursor kept in the `audit-cursor` index, which moves only on a 2xx. An outage or a restart therefore loses nothing: failed deliveries back off (doubling, up to 5 minutes) and resume where they stopped. Delivery is **at-least-once**, so de-duplicate on each event's `id`.
+
 ## Data model
 
 Elastic is the only datastore (see milestone-1 plan §1 in `scaling-doodle/docs/milestone-1-plan.md`). Index definitions live in [`src/elastic/indices.ts`](src/elastic/indices.ts): each index sits behind an alias (`topics` → `topics-v1`) with a `dynamic: strict` mapping. Adding fields is applied in place by `es:migrate` (`mapping-updated`). For anything else, such as a changed field type, bump the definition's `version` and run `es:migrate`; it creates the new index and reports `needs-reindex`. Reindex, then swap the alias.
