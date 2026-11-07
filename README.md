@@ -29,7 +29,7 @@ npm run start:dev             # API on :3000
 ```
 
 - `GET /health`: liveness/readiness, checks Elasticsearch. Public.
-- `GET /docs`: Swagger UI; the spec is at `/docs/openapi.json`. `npm run openapi:export` builds and writes `openapi.json` (CI uploads it as an artifact for the frontend's generated client).
+- `GET /docs`: Swagger UI; the spec is at `/docs/openapi.json`. `openapi.json` at the repo root is the committed contract the frontend generates its client from. After changing an endpoint or DTO, run `npm run openapi:export` and commit the result; CI fails if it is stale.
 - `GET /me`: the current user and their topic scope.
 
 ### Read endpoints

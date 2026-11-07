@@ -4,7 +4,6 @@ dist/
 .env.*
 !.env.example
 .DS_Store
-openapi.json
 *.ndjson
 coverage/
 *.tsbuildinfo
