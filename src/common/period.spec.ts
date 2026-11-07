@@ -24,8 +24,16 @@ describe('parsePeriod', () => {
     expect(parsePeriod('FY27', '2026-11-06')).toMatchObject({ from: '2026-10-01', to: '2026-11-06', toMonth: '2026-11' });
   });
 
+  it('takes a calendar month, capped at asOf while it runs', () => {
+    expect(parsePeriod('2026-10', '2026-11-06')).toEqual({ label: '2026-10', from: '2026-10-01', to: '2026-10-31', fromMonth: '2026-10', toMonth: '2026-10' });
+    expect(parsePeriod('2026-02', '2026-11-06')).toMatchObject({ to: '2026-02-28' });
+    expect(parsePeriod('2026-11', '2026-11-06')).toMatchObject({ from: '2026-11-01', to: '2026-11-06' });
+  });
+
   it('rejects unknown and future periods', () => {
     expect(() => parsePeriod('last-week', '2026-11-06')).toThrow(BadRequestException);
     expect(() => parsePeriod('FY28', '2026-11-06')).toThrow(BadRequestException);
+    expect(() => parsePeriod('2026-13', '2026-11-06')).toThrow(BadRequestException);
+    expect(() => parsePeriod('2026-12', '2026-11-06')).toThrow(BadRequestException);
   });
 });

@@ -3,7 +3,7 @@ import { CollaborationCountsDto } from '../model/model.dto';
 import { HealthMixDto, RollupBudgetDto } from '../org/org.dto';
 
 export class PortfolioQueryDto {
-  /** `ytd` (default), `FY26` or `FY26-Q2` (US federal fiscal year: FY26 starts 2025-10-01). */
+  /** `ytd` (default), `FY26`, `FY26-Q2` or a month, `2026-11` (US federal fiscal year: FY26 starts 2025-10-01). */
   @IsOptional()
   @IsString()
   period?: string;
