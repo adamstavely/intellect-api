@@ -1,0 +1,64 @@
+name: Automerge
+
+# Squash-merges a PR once CI passes on it. GitHub's native auto-merge needs a paid plan for
+# private repos, so this stands in for it. Label a PR `no-automerge` (or keep it a draft) to opt out.
+#
+# Runs in the base repo's context and never checks out PR code; it only calls the GitHub API.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: automerge-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge the PR if it is still at the SHA CI tested
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # Passed through env, never interpolated into the script, so a branch name can't inject shell.
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          pr="${PR_NUMBER:-}"
+          if [ -z "$pr" ]; then
+            pr="$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          fi
+          if [ -z "$pr" ]; then
+            echo "No open PR for $HEAD_BRANCH; nothing to merge."
+            exit 0
+          fi
+
+          info="$(gh pr view "$pr" --json state,isDraft,headRefOid,labels)"
+          state="$(jq -r .state <<<"$info")"
+          draft="$(jq -r .isDraft <<<"$info")"
+          head="$(jq -r .headRefOid <<<"$info")"
+          optout="$(jq -r '[.labels[].name] | index("no-automerge") != null' <<<"$info")"
+
+          if [ "$state" != "OPEN" ]; then echo "PR #$pr is $state; skipping."; exit 0; fi
+          if [ "$draft" = "true" ]; then echo "PR #$pr is a draft; skipping."; exit 0; fi
+          if [ "$optout" = "true" ]; then echo "PR #$pr is labelled no-automerge; skipping."; exit 0; fi
+          if [ "$head" != "$HEAD_SHA" ]; then
+            echo "PR #$pr head is $head but CI passed on $HEAD_SHA; a newer push is still being tested. Skipping."
+            exit 0
+          fi
+
+          # --match-head-commit makes GitHub refuse the merge if the head moved after the check above.
+          gh pr merge "$pr" --squash --delete-branch --match-head-commit "$HEAD_SHA"
+          echo "Merged PR #$pr at $HEAD_SHA."
