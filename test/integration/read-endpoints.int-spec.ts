@@ -226,6 +226,45 @@ describe('read endpoints', () => {
     });
   });
 
+  describe('recent papers', () => {
+    // Two papers last month and one this month on t-neuro, one last month on t-carbon; removed afterwards.
+    const extra = [
+      { id: 'px-1', topicId: 't-neuro', published: '2026-10-03' },
+      { id: 'px-2', topicId: 't-neuro', published: '2026-10-31' },
+      { id: 'px-3', topicId: 't-neuro', published: '2026-11-02' },
+      { id: 'px-4', topicId: 't-carbon', published: '2026-10-15' },
+      { id: 'px-5', topicId: 't-neuro', published: '2026-09-30' },
+    ];
+    beforeAll(async () => {
+      await es.bulk({
+        refresh: 'wait_for',
+        operations: extra.flatMap((p) => [{ index: { _index: 'papers', _id: p.id } }, { ...p, title: p.id, partners: [] }]),
+      });
+    });
+    afterAll(async () => {
+      await es.bulk({ refresh: 'wait_for', operations: extra.map((p) => ({ delete: { _index: 'papers', _id: p.id } })) });
+    });
+
+    it('counts last month and this month per topic', async () => {
+      const topics = (await get('/topics')) as unknown as Body[];
+      expect(topics.find((t) => t.id === 't-neuro')!.recentPapers).toEqual({ lastMonth: 2, thisMonth: 1 });
+      expect(topics.find((t) => t.id === 't-carbon')!.recentPapers).toEqual({ lastMonth: 1, thisMonth: 0 });
+      expect(topics.find((t) => t.id === 't-grid')!.recentPapers).toEqual({ lastMonth: 0, thisMonth: 0 });
+      expect((await get('/topics/t-neuro')).recentPapers).toEqual({ lastMonth: 2, thisMonth: 1 });
+    });
+
+    it('sums them per center and team, with work and mean health trend', async () => {
+      const body = await get('/org');
+      const intel = (body.centers as Body[]).find((c) => c.id === 'sl-intel')!;
+      expect(intel.rollup.recentPapers).toEqual({ lastMonth: 2, thisMonth: 1 });
+      expect(intel.rollup.trend).toHaveLength(12);
+      expect(typeof intel.rollup.momentum).toBe('number');
+      expect(intel.rollup.work).toBeGreaterThan(0);
+      const energy = (body.centers as Body[]).find((c) => c.id === 'sl-energy')!;
+      expect(energy.rollup.recentPapers).toEqual({ lastMonth: 1, thisMonth: 0 });
+    });
+  });
+
   describe('GET /people', () => {
     it('lists everyone for the Chief, with load', async () => {
       const body = (await get('/people')) as unknown as Body[];

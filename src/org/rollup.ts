@@ -1,10 +1,16 @@
-import type { Topic } from '../model/types';
+import type { RecentPapers, Topic } from '../model/types';
+import { NO_RECENT_PAPERS } from '../papers/recent-papers';
+import { momentum } from '../topic-health/topic-health';
 import type { OrgRollupDto } from './org.dto';
 
 const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 ** places;
 
 /** Roll-up of stored topic stats for an org unit (or any set of topics). */
-export function rollup(topics: Pick<Topic, 'health' | 'healthScore' | 'stats' | 'budget'>[]): OrgRollupDto {
+export function rollup(
+  topics: Pick<Topic, 'id' | 'health' | 'healthScore' | 'stats' | 'budget' | 'trend'>[],
+  recent: Map<string, RecentPapers> = new Map(),
+): OrgRollupDto {
+  const trend = meanTrend(topics.map((t) => t.trend ?? []));
   // Topics stored before collaboration counts existed have none until their next recompute.
   const joint = topics.reduce((s, t) => s + (t.stats.collaboration?.joint ?? 0), 0);
   const papers = topics.reduce((s, t) => s + (t.stats.papers ?? 0), 0);
@@ -27,5 +33,24 @@ export function rollup(topics: Pick<Topic, 'health' | 'healthScore' | 'stats' | 
     },
     papers,
     collaboration: { unilateral: papers - joint, joint },
+    recentPapers: topics.reduce(
+      (s, t) => {
+        const r = recent.get(t.id) ?? NO_RECENT_PAPERS;
+        return { lastMonth: s.lastMonth + r.lastMonth, thisMonth: s.thisMonth + r.thisMonth };
+      },
+      { ...NO_RECENT_PAPERS },
+    ),
+    work: topics.reduce((s, t) => s + (t.stats.work ?? 0), 0),
+    trend,
+    momentum: momentum(trend),
   };
+}
+
+/** Month-by-month mean of several trends, lined up on their latest month; each month averages the trends that reach it. */
+export function meanTrend(trends: number[][]): number[] {
+  const length = Math.max(0, ...trends.map((t) => t.length));
+  return Array.from({ length }, (_, i) => {
+    const values = trends.map((t) => t[t.length - length + i]).filter((v): v is number => v !== undefined);
+    return Math.round(values.reduce((s, v) => s + v, 0) / values.length);
+  });
 }

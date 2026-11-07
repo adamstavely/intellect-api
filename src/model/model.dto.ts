@@ -43,6 +43,13 @@ export class CollaborationCountsDto implements M.CollaborationCounts {
   joint!: number;
 }
 
+export class RecentPapersDto implements M.RecentPapers {
+  /** Papers published in the whole of last calendar month. */
+  lastMonth!: number;
+  /** Papers published this calendar month, up to today. */
+  thisMonth!: number;
+}
+
 export class TopicStatsDto implements M.TopicStats {
   questions!: number;
   gaps!: number;

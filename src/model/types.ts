@@ -50,6 +50,12 @@ export interface TopicStats {
   collaboration: CollaborationCounts;
 }
 
+/** Papers published in the last calendar month and so far this month. */
+export interface RecentPapers {
+  lastMonth: number;
+  thisMonth: number;
+}
+
 export interface CollaborationCounts {
   unilateral: number;
   joint: number;

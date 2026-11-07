@@ -13,7 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { CitationDto, GapDto, PaperDto, PersonRefDto, QuestionDto, TopicDto, WorkDto } from '../model/model.dto';
+import { CitationDto, GapDto, PaperDto, PersonRefDto, QuestionDto, RecentPapersDto, TopicDto, WorkDto } from '../model/model.dto';
 
 export const TOPIC_SORTS = ['risk', 'name', 'health', 'momentum', 'bin'] as const;
 export type TopicSort = (typeof TOPIC_SORTS)[number];
@@ -38,6 +38,8 @@ export class TopicsQueryDto {
 
 export class TopicSummaryDto extends TopicDto {
   lead!: PersonRefDto | null;
+  /** Papers published last month and so far this month, counted live. */
+  recentPapers!: RecentPapersDto;
 }
 
 export class OrgRefDto {
