@@ -226,6 +226,62 @@ describe('read endpoints', () => {
     });
   });
 
+  describe('time to first citation', () => {
+    it('gives each paper the months from publication to its first citation', async () => {
+      const papers = (await get('/papers')) as unknown as Body[];
+      expect(papers.find((p) => p.id === 'p1')!.firstCitation).toEqual({ month: '2026-02', monthsAfterPublication: 3 });
+      expect((await get('/papers/p5')).firstCitation).toEqual({ month: '2026-05', monthsAfterPublication: 3 });
+    });
+
+    it('summarises it over the caller\'s papers, or one topic', async () => {
+      expect(await get('/papers/first-citation')).toEqual({
+        papers: 3,
+        cited: 3,
+        awaiting: 0,
+        medianMonths: 3,
+        fastestMonths: 3,
+        slowestMonths: 3,
+        longestWaitMonths: null,
+      });
+      expect(await get('/papers/first-citation', 'mo')).toMatchObject({ papers: 2, cited: 2 });
+      expect(await get('/papers/first-citation?topicId=t-carbon')).toMatchObject({ papers: 1, cited: 1 });
+    });
+
+    it('counts an uncited paper as awaiting, with how long it has waited', async () => {
+      await es.index({
+        index: 'papers',
+        id: 'px-uncited',
+        refresh: 'wait_for',
+        document: {
+          id: 'px-uncited',
+          topicId: 't-neuro',
+          title: 'Uncited',
+          venue: 'arXiv',
+          published: '2026-07-10',
+          authorIds: [],
+          partners: [],
+          questionIds: [],
+          gapIds: [],
+          workIds: [],
+          grade: null,
+          gradedBy: null,
+          gradedAt: null,
+          feedback: [],
+        },
+      });
+      try {
+        expect((await get('/papers/first-citation?topicId=t-neuro')).awaiting).toBe(1);
+        expect((await get('/papers/first-citation?topicId=t-neuro')).longestWaitMonths).toBe(4);
+        expect(((await get('/papers')) as unknown as Body[]).find((p) => p.id === 'px-uncited')!.firstCitation).toEqual({
+          month: null,
+          monthsAfterPublication: null,
+        });
+      } finally {
+        await es.delete({ index: 'papers', id: 'px-uncited', refresh: 'wait_for' });
+      }
+    });
+  });
+
   describe('recent papers', () => {
     // Two papers last month and one this month on t-neuro, one last month on t-carbon; removed afterwards.
     const extra = [

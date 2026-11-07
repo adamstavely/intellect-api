@@ -518,6 +518,43 @@
         ]
       }
     },
+    "/papers/first-citation": {
+      "get": {
+        "operationId": "PapersController_firstCitation",
+        "parameters": [
+          {
+            "name": "topicId",
+            "required": false,
+            "in": "query",
+            "description": "Only this topic's papers; unset for every paper in the caller's scope.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FirstCitationSummaryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Time to first citation across the caller's papers (or one topic's). Declared before `:id`.",
+        "tags": [
+          "papers"
+        ]
+      }
+    },
     "/papers/{id}": {
       "get": {
         "operationId": "PapersController_get",
@@ -2415,6 +2452,25 @@
           "mentions"
         ]
       },
+      "FirstCitationDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "nullable": true,
+            "description": "YYYY-MM of the first month with a citation; null while the paper hasn't been cited."
+          },
+          "monthsAfterPublication": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole months from the publication month to that month (0 = cited the month it came out); null while uncited."
+          }
+        },
+        "required": [
+          "month",
+          "monthsAfterPublication"
+        ]
+      },
       "PaperListItemDto": {
         "type": "object",
         "properties": {
@@ -2505,6 +2561,14 @@
                 "$ref": "#/components/schemas/MetricTotalsDto"
               }
             ]
+          },
+          "firstCitation": {
+            "description": "Time to first citation, from monthly metrics.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirstCitationDto"
+              }
+            ]
           }
         },
         "required": [
@@ -2524,7 +2588,8 @@
           "feedback",
           "topic",
           "authors",
-          "totals"
+          "totals",
+          "firstCitation"
         ]
       },
       "TopPaperDto": {
@@ -2618,6 +2683,14 @@
               }
             ]
           },
+          "firstCitation": {
+            "description": "Time to first citation, from monthly metrics.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirstCitationDto"
+              }
+            ]
+          },
           "periodTotals": {
             "description": "Totals within the requested period.",
             "allOf": [
@@ -2645,7 +2718,53 @@
           "topic",
           "authors",
           "totals",
+          "firstCitation",
           "periodTotals"
+        ]
+      },
+      "FirstCitationSummaryDto": {
+        "type": "object",
+        "properties": {
+          "papers": {
+            "type": "number",
+            "description": "Papers in scope."
+          },
+          "cited": {
+            "type": "number",
+            "description": "Papers cited at least once."
+          },
+          "awaiting": {
+            "type": "number",
+            "description": "Papers not cited yet."
+          },
+          "medianMonths": {
+            "type": "number",
+            "nullable": true,
+            "description": "Median months from publication to first citation, over cited papers; null with none cited."
+          },
+          "fastestMonths": {
+            "type": "number",
+            "nullable": true,
+            "description": "The quickest and slowest first citations, in months; null with none cited."
+          },
+          "slowestMonths": {
+            "type": "number",
+            "nullable": true
+          },
+          "longestWaitMonths": {
+            "type": "number",
+            "nullable": true,
+            "description": "For papers still awaiting a first citation: the longest any has waited so far, in months; null with none waiting."
+          }
+        },
+        "required": [
+          "papers",
+          "cited",
+          "awaiting",
+          "medianMonths",
+          "fastestMonths",
+          "slowestMonths",
+          "longestWaitMonths"
         ]
       },
       "AudienceDto": {
@@ -2848,6 +2967,14 @@
               }
             ]
           },
+          "firstCitation": {
+            "description": "Time to first citation, from monthly metrics.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FirstCitationDto"
+              }
+            ]
+          },
           "metrics": {
             "description": "One entry per month, oldest first.",
             "type": "array",
@@ -2905,6 +3032,7 @@
           "topic",
           "authors",
           "totals",
+          "firstCitation",
           "metrics",
           "audience",
           "geo",

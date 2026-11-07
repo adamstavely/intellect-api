@@ -3,7 +3,7 @@ import { ApiForbiddenResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/roles';
 import { CurrentUser } from '../auth/current-user';
 import type { Person } from '../model/types';
-import { GradePaperDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
+import { FirstCitationQueryDto, FirstCitationSummaryDto, GradePaperDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
 import { PapersService } from './papers.service';
 
 @ApiTags('papers')
@@ -21,6 +21,12 @@ export class PapersController {
   @Get('top')
   top(@CurrentUser() user: Person, @Query() query: TopPapersQueryDto): Promise<TopPaperDto[]> {
     return this.papers.top(user, query);
+  }
+
+  /** Time to first citation across the caller's papers (or one topic's). Declared before `:id`. */
+  @Get('first-citation')
+  firstCitation(@CurrentUser() user: Person, @Query() query: FirstCitationQueryDto): Promise<FirstCitationSummaryDto> {
+    return this.papers.firstCitationSummary(user, query);
   }
 
   /** Paper detail with monthly metrics, audience, geo and citing works. */

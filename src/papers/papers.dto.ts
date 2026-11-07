@@ -53,11 +53,43 @@ export class MetricTotalsDto {
   mentions!: MentionsDto;
 }
 
+export class FirstCitationDto {
+  /** YYYY-MM of the first month with a citation; null while the paper hasn't been cited. */
+  month!: string | null;
+  /** Whole months from the publication month to that month (0 = cited the month it came out); null while uncited. */
+  monthsAfterPublication!: number | null;
+}
+
 export class PaperListItemDto extends PaperDto {
   topic!: TopicRefDto;
   authors!: PersonRefDto[];
   /** Lifetime totals. */
   totals!: MetricTotalsDto;
+  /** Time to first citation, from monthly metrics. */
+  firstCitation!: FirstCitationDto;
+}
+
+export class FirstCitationQueryDto {
+  /** Only this topic's papers; unset for every paper in the caller's scope. */
+  @IsOptional()
+  @IsString()
+  topicId?: string;
+}
+
+export class FirstCitationSummaryDto {
+  /** Papers in scope. */
+  papers!: number;
+  /** Papers cited at least once. */
+  cited!: number;
+  /** Papers not cited yet. */
+  awaiting!: number;
+  /** Median months from publication to first citation, over cited papers; null with none cited. */
+  medianMonths!: number | null;
+  /** The quickest and slowest first citations, in months; null with none cited. */
+  fastestMonths!: number | null;
+  slowestMonths!: number | null;
+  /** For papers still awaiting a first citation: the longest any has waited so far, in months; null with none waiting. */
+  longestWaitMonths!: number | null;
 }
 
 export class TopPaperDto extends PaperListItemDto {
