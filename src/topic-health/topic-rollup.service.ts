@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, errors } from '@elastic/elasticsearch';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import type { Gap, Person, Topic, TopicHealthHistory, Work } from '../model/types';
+import type { Gap, Paper, Person, Topic, TopicHealthHistory, Work } from '../model/types';
 import { healthBand, healthScore, momentum, topicStats, trailingMonths } from './topic-health';
 
 const MAX_ATTEMPTS = 5;
@@ -52,7 +52,7 @@ export class TopicRollupService {
         { index: ALIASES.work },
         { size: 1000, _source: ['status', 'gapIds', 'due'], query: byTopic },
         { index: ALIASES.papers },
-        { size: 0, track_total_hits: true, query: byTopic },
+        { size: 1000, _source: ['grade'], query: byTopic },
         { index: ALIASES.people },
         { size: 1000, _source: ['allocations'], query: { nested: { path: 'allocations', query: { term: { 'allocations.topicId': topicId } } } } },
         { index: ALIASES.topicHealthHistory },
@@ -75,7 +75,7 @@ export class TopicRollupService {
     const score = healthScore({ gaps: tGaps, work: tWork, asOf });
     const trend = [...sources<Pick<TopicHealthHistory, 'healthScore'>>(history).map((h) => h.healthScore), score];
     return {
-      stats: topicStats({ questions: total(questions), papers: total(papers), fte, gaps: tGaps, work: tWork, asOf }),
+      stats: topicStats({ questions: total(questions), papers: sources<Pick<Paper, 'grade'>>(papers), fte, gaps: tGaps, work: tWork, asOf }),
       healthScore: score,
       health: healthBand(score),
       trend,
