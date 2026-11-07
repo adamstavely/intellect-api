@@ -28,8 +28,26 @@ npm run start:dev             # API on :3000
 ```
 
 - `GET /health`: liveness/readiness, checks Elasticsearch. Public.
-- `GET /docs`: Swagger UI; the spec is at `/docs/openapi.json`. `npm run openapi:export` writes `openapi.json` (CI uploads it as an artifact for the frontend's generated client).
+- `GET /docs`: Swagger UI; the spec is at `/docs/openapi.json`. `npm run openapi:export` builds and writes `openapi.json` (CI uploads it as an artifact for the frontend's generated client).
 - `GET /me`: the current user and their topic scope.
+
+### Read endpoints
+
+All scoped to the caller (see Auth below). Full schemas at `/docs`.
+
+| Endpoint | Serves |
+|---|---|
+| `GET /people`, `GET /people/:id` | People page; load vs capacity |
+| `GET /portfolio/summary?period=` | Dashboard KPIs, health mix, bin mix, coverage, reads trend |
+| `GET /topics?sort=risk&bin=&health=` | Dashboard priorities table |
+| `GET /topics/:id` | Topic header and resourcing strip |
+| `GET /topics/:id/spine` | Question → Gap → Work → Paper → Citation nodes and edges |
+| `GET /gaps?attention=true&limit=5` | Gaps needing attention (open, no active work; most severe first) |
+| `GET /papers`, `GET /papers/top?limit=3&period=`, `GET /papers/:id` | Papers list, impact pulse, detail with monthly metrics |
+| `GET /org` | Centers → teams → topic roll-ups |
+| `GET /search?q=` | ⌘K search over topics, gaps, papers and people |
+
+`period` is `ytd` (default), `FY26` or `FY26-Q2`, on the US federal fiscal year (FY26 starts 2025-10-01). Out-of-scope ids return 404, not 403.
 
 ### Auth (stub)
 

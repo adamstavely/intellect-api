@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
@@ -39,5 +39,31 @@ export class ScopeService {
 
   static toFilter(scope: TopicScope, field: 'id' | 'topicId'): estypes.QueryDslQueryContainer {
     return scope.all ? { match_all: {} } : { terms: { [field]: scope.topicIds } };
+  }
+
+  /**
+   * People visible to the user: everyone for the Chief; otherwise the user plus anyone with FTE
+   * on one of the user's topics.
+   */
+  static peopleFilter(scope: TopicScope, user: Pick<Person, 'id'>): estypes.QueryDslQueryContainer {
+    if (scope.all) return { match_all: {} };
+    return {
+      bool: {
+        should: [
+          { term: { id: user.id } },
+          { nested: { path: 'allocations', query: { terms: { 'allocations.topicId': scope.topicIds } } } },
+        ],
+        minimum_should_match: 1,
+      },
+    };
+  }
+
+  static inScope(scope: TopicScope, topicId: string): boolean {
+    return scope.all || scope.topicIds.includes(topicId);
+  }
+
+  /** 404 rather than 403 for out-of-scope topics, so ids outside a user's scope aren't revealed. */
+  static assertInScope(scope: TopicScope, topicId: string, what = 'Topic'): void {
+    if (!ScopeService.inScope(scope, topicId)) throw new NotFoundException(`${what} not found`);
   }
 }
