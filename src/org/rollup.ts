@@ -1,6 +1,6 @@
 import type { RecentPapers, Topic } from '../model/types';
 import { NO_RECENT_PAPERS } from '../papers/recent-papers';
-import { momentum } from '../topic-health/topic-health';
+import { healthBand, momentum } from '../topic-health/topic-health';
 import type { OrgRollupDto } from './org.dto';
 
 const round = (n: number, places: number) => Math.round(n * 10 ** places) / 10 ** places;
@@ -11,6 +11,7 @@ export function rollup(
   recent: Map<string, RecentPapers> = new Map(),
 ): OrgRollupDto {
   const trend = meanTrend(topics.map((t) => t.trend ?? []));
+  const avgHealthScore = topics.length ? Math.round(topics.reduce((s, t) => s + t.healthScore, 0) / topics.length) : null;
   // Topics stored before collaboration counts existed have none until their next recompute.
   const joint = topics.reduce((s, t) => s + (t.stats.collaboration?.joint ?? 0), 0);
   const papers = topics.reduce((s, t) => s + (t.stats.papers ?? 0), 0);
@@ -23,7 +24,8 @@ export function rollup(
       watch: topics.filter((t) => t.health === 'watch').length,
       atRisk: topics.filter((t) => t.health === 'at-risk').length,
     },
-    avgHealthScore: topics.length ? Math.round(topics.reduce((s, t) => s + t.healthScore, 0) / topics.length) : null,
+    avgHealthScore,
+    health: avgHealthScore === null ? null : healthBand(avgHealthScore),
     openGaps,
     coverage: openGaps ? round(covered / openGaps, 3) : 1,
     fte: round(topics.reduce((s, t) => s + t.stats.fte, 0), 1),

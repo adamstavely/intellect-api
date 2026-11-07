@@ -2945,6 +2945,16 @@
             "nullable": true,
             "description": "Mean healthScore; null with no topics."
           },
+          "health": {
+            "type": "string",
+            "nullable": true,
+            "description": "The band that mean falls in, by the same thresholds as a topic's; null with no topics.",
+            "enum": [
+              "healthy",
+              "watch",
+              "at-risk"
+            ]
+          },
           "openGaps": {
             "type": "number"
           },
@@ -2998,6 +3008,7 @@
           "topics",
           "healthMix",
           "avgHealthScore",
+          "health",
           "openGaps",
           "coverage",
           "fte",

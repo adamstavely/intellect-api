@@ -16,6 +16,8 @@ export class OrgRollupDto {
   healthMix!: HealthMixDto;
   /** Mean healthScore; null with no topics. */
   avgHealthScore!: number | null;
+  /** The band that mean falls in, by the same thresholds as a topic's; null with no topics. */
+  health!: 'healthy' | 'watch' | 'at-risk' | null;
   openGaps!: number;
   /** Share of open gaps covered by active work, across the unit's topics. 1 when there are none. */
   coverage!: number;

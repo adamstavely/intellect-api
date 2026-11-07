@@ -25,6 +25,7 @@ describe('org rollup', () => {
       topics: 3,
       healthMix: { healthy: 1, watch: 1, atRisk: 1 },
       avgHealthScore: 53,
+      health: 'watch',
       openGaps: 8,
       coverage: 0.625,
       fte: 2.3,
@@ -39,6 +40,6 @@ describe('org rollup', () => {
   });
 
   it('handles an empty unit', () => {
-    expect(rollup([])).toMatchObject({ topics: 0, avgHealthScore: null, openGaps: 0, coverage: 1, fte: 0, papers: 0, collaboration: { unilateral: 0, joint: 0 }, recentPapers: { lastMonth: 0, thisMonth: 0 }, trend: [], momentum: 0 });
+    expect(rollup([])).toMatchObject({ topics: 0, avgHealthScore: null, health: null, openGaps: 0, coverage: 1, fte: 0, papers: 0, collaboration: { unilateral: 0, joint: 0 }, recentPapers: { lastMonth: 0, thisMonth: 0 }, trend: [], momentum: 0 });
   });
 });
