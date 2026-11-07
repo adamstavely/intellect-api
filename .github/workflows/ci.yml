@@ -20,6 +20,15 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # openapi.json is committed (the frontend generates its client from it); fail if it's stale.
+      - name: Check OpenAPI spec is up to date
+        run: |
+          npm run openapi:export
+          git diff --exit-code openapi.json || { echo "::error file=openapi.json::openapi.json is stale. Run npm run openapi:export and commit it."; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
 
   unit:
     runs-on: ubuntu-latest
@@ -31,12 +40,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - name: Build and export OpenAPI spec
-        run: npm run openapi:export
-      - uses: actions/upload-artifact@v4
-        with:
-          name: openapi
-          path: openapi.json
 
   integration:
     runs-on: ubuntu-latest

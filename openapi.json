@@ -1,0 +1,3281 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/me": {
+      "get": {
+        "operationId": "MeController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or unknown X-Intellect-User"
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "tags": [
+          "me"
+        ]
+      }
+    },
+    "/people": {
+      "get": {
+        "operationId": "PeopleController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PersonSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "People visible to the caller: everyone for the Chief, otherwise the caller and their topics' staff.",
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/people/{id}": {
+      "get": {
+        "operationId": "PeopleController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "tags": [
+          "people"
+        ]
+      }
+    },
+    "/portfolio/summary": {
+      "get": {
+        "operationId": "PortfolioController_summary",
+        "parameters": [
+          {
+            "name": "period",
+            "required": false,
+            "in": "query",
+            "description": "`ytd` (default), `FY26` or `FY26-Q2` (US federal fiscal year: FY26 starts 2025-10-01).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioSummaryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Dashboard KPIs, health mix, bin mix and coverage ring for the caller's scope.",
+        "tags": [
+          "portfolio"
+        ]
+      }
+    },
+    "/topics": {
+      "get": {
+        "operationId": "TopicsController_list",
+        "parameters": [
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`risk` (default): lowest health first, then falling momentum. `health`: highest first.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "risk",
+                "name",
+                "health",
+                "momentum",
+                "bin"
+              ]
+            }
+          },
+          {
+            "name": "bin",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 4,
+              "type": "number"
+            }
+          },
+          {
+            "name": "health",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "healthy",
+                "watch",
+                "at-risk"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TopicSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Topics in the caller's scope; the dashboard priorities table uses `sort=risk`.",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "TopicsController_create",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTopicDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicDetailDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed, or unknown lead or team"
+          },
+          "403": {
+            "description": "Not the Chief or a PI, or a PI naming someone else as lead"
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "New Topic flow: creates the topic and its opening questions. Chief, or a PI creating a topic they lead.",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/topics/{id}": {
+      "get": {
+        "operationId": "TopicsController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Topic header and resourcing strip.",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/topics/{id}/spine": {
+      "get": {
+        "operationId": "TopicsController_spine",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SpineDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Traceability spine: Question → Gap → Work → Paper → Citation.",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/gaps": {
+      "get": {
+        "operationId": "GapsController_list",
+        "parameters": [
+          {
+            "name": "attention",
+            "required": false,
+            "in": "query",
+            "description": "Only open gaps with no active work against them, most severe (then least healthy topic) first.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "1–100, default 20.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "type": "number"
+            }
+          },
+          {
+            "name": "topicId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "addressing",
+                "closing",
+                "closed"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/GapListItemDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Gaps in the caller's scope. The dashboard's \"Gaps needing attention\" is `attention=true&limit=5`.",
+        "tags": [
+          "gaps"
+        ]
+      }
+    },
+    "/papers": {
+      "get": {
+        "operationId": "PapersController_list",
+        "parameters": [
+          {
+            "name": "topicId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "grade",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "outstanding",
+                "excellent",
+                "satisfactory",
+                "dissatisfactory",
+                "ungraded"
+              ]
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "description": "`published` (newest first, default) or `reads` (most views first).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "published",
+                "reads"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PaperListItemDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "tags": [
+          "papers"
+        ]
+      }
+    },
+    "/papers/top": {
+      "get": {
+        "operationId": "PapersController_top",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "1–20, default 3.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "period",
+            "required": false,
+            "in": "query",
+            "description": "`ytd` (default), `FY26` or `FY26-Q2`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TopPaperDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Dashboard \"Impact pulse\": most-read papers in the period. Declared before `:id`.",
+        "tags": [
+          "papers"
+        ]
+      }
+    },
+    "/papers/{id}": {
+      "get": {
+        "operationId": "PapersController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Paper detail with monthly metrics, audience, geo and citing works.",
+        "tags": [
+          "papers"
+        ]
+      }
+    },
+    "/papers/{id}/grade": {
+      "patch": {
+        "operationId": "PapersController_grade",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GradePaperDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperDetailDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller is not the Chief"
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Grade a paper. Chief only.",
+        "tags": [
+          "papers"
+        ]
+      }
+    },
+    "/org": {
+      "get": {
+        "operationId": "OrgController_tree",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Centers → teams → topic roll-ups.",
+        "tags": [
+          "org"
+        ]
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "SearchController_search",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Results per group, 1–20, default 5.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 20,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResultsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "⌘K search over topics, gaps, papers and people (prefix matching on the last word).",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/brief": {
+      "get": {
+        "operationId": "BriefController_brief",
+        "parameters": [
+          {
+            "name": "period",
+            "required": false,
+            "in": "query",
+            "description": "`FY26-Q2`, `FY26` or `ytd` (default).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Directorate Brief for the period, scoped to the caller.",
+        "tags": [
+          "brief"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The Health Check is successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "info": {
+                      "type": "object",
+                      "example": {
+                        "database": {
+                          "status": "up"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "nullable": true
+                    },
+                    "error": {
+                      "type": "object",
+                      "example": {},
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "nullable": true
+                    },
+                    "details": {
+                      "type": "object",
+                      "example": {
+                        "database": {
+                          "status": "up"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The Health Check is not successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "error"
+                    },
+                    "info": {
+                      "type": "object",
+                      "example": {
+                        "database": {
+                          "status": "up"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "nullable": true
+                    },
+                    "error": {
+                      "type": "object",
+                      "example": {
+                        "redis": {
+                          "status": "down",
+                          "message": "Could not connect"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "nullable": true
+                    },
+                    "details": {
+                      "type": "object",
+                      "example": {
+                        "database": {
+                          "status": "up"
+                        },
+                        "redis": {
+                          "status": "down",
+                          "message": "Could not connect"
+                        }
+                      },
+                      "additionalProperties": {
+                        "type": "object",
+                        "required": [
+                          "status"
+                        ],
+                        "properties": {
+                          "status": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Intellect API",
+    "description": "Research-portfolio backend. Auth is stubbed: send X-Intellect-User with a person id.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "intellect-user": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-intellect-user"
+      }
+    },
+    "schemas": {
+      "TopicScopeDto": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "description": "True for the Chief: every topic is in scope."
+          },
+          "topicIds": {
+            "description": "Topic ids in scope when `all` is false.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "all"
+        ]
+      },
+      "AllocationDto": {
+        "type": "object",
+        "properties": {
+          "topicId": {
+            "type": "string"
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "topicId",
+          "fte"
+        ]
+      },
+      "MeDto": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/TopicScopeDto"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "initials": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "chief",
+              "pi",
+              "staff",
+              "postdoc"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title as displayed, e.g. \"Lab Director\"."
+          },
+          "team": {
+            "type": "string",
+            "nullable": true,
+            "description": "Team org-unit id; null for the directorate."
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          },
+          "capacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "scope",
+          "id",
+          "name",
+          "initials",
+          "role",
+          "title",
+          "team",
+          "allocations",
+          "capacity"
+        ]
+      },
+      "PersonSummaryDto": {
+        "type": "object",
+        "properties": {
+          "load": {
+            "type": "number",
+            "description": "Total allocated FTE."
+          },
+          "overCapacity": {
+            "type": "boolean",
+            "description": "load > capacity"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "initials": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "chief",
+              "pi",
+              "staff",
+              "postdoc"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title as displayed, e.g. \"Lab Director\"."
+          },
+          "team": {
+            "type": "string",
+            "nullable": true,
+            "description": "Team org-unit id; null for the directorate."
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          },
+          "capacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "load",
+          "overCapacity",
+          "id",
+          "name",
+          "initials",
+          "role",
+          "title",
+          "team",
+          "allocations",
+          "capacity"
+        ]
+      },
+      "TopicRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "PersonAllocationDto": {
+        "type": "object",
+        "properties": {
+          "topic": {
+            "$ref": "#/components/schemas/TopicRefDto"
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "topic",
+          "fte"
+        ]
+      },
+      "PersonDetailDto": {
+        "type": "object",
+        "properties": {
+          "load": {
+            "type": "number",
+            "description": "Total allocated FTE."
+          },
+          "overCapacity": {
+            "type": "boolean",
+            "description": "load > capacity"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "initials": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "chief",
+              "pi",
+              "staff",
+              "postdoc"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "description": "Job title as displayed, e.g. \"Lab Director\"."
+          },
+          "team": {
+            "type": "string",
+            "nullable": true,
+            "description": "Team org-unit id; null for the directorate."
+          },
+          "allocations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          },
+          "capacity": {
+            "type": "number"
+          },
+          "topics": {
+            "description": "Allocations with topic names; only topics in the caller's scope are listed.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonAllocationDto"
+            }
+          }
+        },
+        "required": [
+          "load",
+          "overCapacity",
+          "id",
+          "name",
+          "initials",
+          "role",
+          "title",
+          "team",
+          "allocations",
+          "capacity",
+          "topics"
+        ]
+      },
+      "PeriodDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "description": "Inclusive YYYY-MM-DD; `to` is capped at today."
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "from",
+          "to"
+        ]
+      },
+      "HealthMixDto": {
+        "type": "object",
+        "properties": {
+          "healthy": {
+            "type": "number"
+          },
+          "watch": {
+            "type": "number"
+          },
+          "atRisk": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "healthy",
+          "watch",
+          "atRisk"
+        ]
+      },
+      "BinMixDto": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "type": "number"
+          },
+          "topics": {
+            "type": "number"
+          },
+          "atRisk": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bin",
+          "topics",
+          "atRisk"
+        ]
+      },
+      "MonthlyReadsDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM"
+          },
+          "views": {
+            "type": "number"
+          },
+          "downloads": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "month",
+          "views",
+          "downloads"
+        ]
+      },
+      "RollupBudgetDto": {
+        "type": "object",
+        "properties": {
+          "allocated": {
+            "type": "number"
+          },
+          "spent": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "allocated",
+          "spent"
+        ]
+      },
+      "PortfolioSummaryDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/PeriodDto"
+          },
+          "topics": {
+            "type": "number"
+          },
+          "activeQuestions": {
+            "type": "number",
+            "description": "Questions not yet answered."
+          },
+          "openGaps": {
+            "type": "number"
+          },
+          "gapsCovered": {
+            "type": "number",
+            "description": "Share of open gaps covered by active work, portfolio-wide. 1 when there are none."
+          },
+          "workInFlight": {
+            "type": "number",
+            "description": "Work items not complete."
+          },
+          "avgHealthScore": {
+            "type": "number",
+            "nullable": true
+          },
+          "healthMix": {
+            "$ref": "#/components/schemas/HealthMixDto"
+          },
+          "binMix": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BinMixDto"
+            }
+          },
+          "papersInPeriod": {
+            "type": "number"
+          },
+          "readsInPeriod": {
+            "type": "number"
+          },
+          "downloadsInPeriod": {
+            "type": "number"
+          },
+          "citationsInPeriod": {
+            "type": "number"
+          },
+          "readTrend": {
+            "description": "Twelve months ending at the period's last month.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlyReadsDto"
+            }
+          },
+          "budget": {
+            "$ref": "#/components/schemas/RollupBudgetDto"
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "period",
+          "topics",
+          "activeQuestions",
+          "openGaps",
+          "gapsCovered",
+          "workInFlight",
+          "avgHealthScore",
+          "healthMix",
+          "binMix",
+          "papersInPeriod",
+          "readsInPeriod",
+          "downloadsInPeriod",
+          "citationsInPeriod",
+          "readTrend",
+          "budget",
+          "fte"
+        ]
+      },
+      "PersonRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "initials": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "initials"
+        ]
+      },
+      "TopicBudgetDto": {
+        "type": "object",
+        "properties": {
+          "allocated": {
+            "type": "number"
+          },
+          "spent": {
+            "type": "number"
+          },
+          "fy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "allocated",
+          "spent",
+          "fy"
+        ]
+      },
+      "GradeCountsDto": {
+        "type": "object",
+        "properties": {
+          "outstanding": {
+            "type": "number"
+          },
+          "excellent": {
+            "type": "number"
+          },
+          "satisfactory": {
+            "type": "number"
+          },
+          "dissatisfactory": {
+            "type": "number"
+          },
+          "ungraded": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "outstanding",
+          "excellent",
+          "satisfactory",
+          "dissatisfactory",
+          "ungraded"
+        ]
+      },
+      "TopicStatsDto": {
+        "type": "object",
+        "properties": {
+          "questions": {
+            "type": "number"
+          },
+          "gaps": {
+            "type": "number"
+          },
+          "openGaps": {
+            "type": "number"
+          },
+          "coverage": {
+            "type": "number",
+            "description": "Share (0–1) of open gaps with at least one active work item."
+          },
+          "work": {
+            "type": "number"
+          },
+          "papers": {
+            "type": "number"
+          },
+          "fte": {
+            "type": "number"
+          },
+          "grades": {
+            "description": "Paper grade roll-up.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GradeCountsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "questions",
+          "gaps",
+          "openGaps",
+          "coverage",
+          "work",
+          "papers",
+          "fte",
+          "grades"
+        ]
+      },
+      "TopicSummaryDto": {
+        "type": "object",
+        "properties": {
+          "lead": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "bin": {
+            "type": "number",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "priorityLabel": {
+            "type": "string"
+          },
+          "healthScore": {
+            "type": "number",
+            "description": "0–100, computed."
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "watch",
+              "at-risk"
+            ]
+          },
+          "leadId": {
+            "type": "string"
+          },
+          "teamId": {
+            "type": "string"
+          },
+          "centerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sponsors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "budget": {
+            "$ref": "#/components/schemas/TopicBudgetDto"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TopicStatsDto"
+          },
+          "momentum": {
+            "type": "number",
+            "description": "Current healthScore minus the score three months ago."
+          },
+          "trend": {
+            "description": "Monthly healthScore, oldest first, ending with the current month.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "lead",
+          "id",
+          "name",
+          "summary",
+          "bin",
+          "priorityLabel",
+          "healthScore",
+          "health",
+          "leadId",
+          "teamId",
+          "centerId",
+          "tags",
+          "sponsors",
+          "budget",
+          "stats",
+          "momentum",
+          "trend"
+        ]
+      },
+      "CreateTopicBudgetDto": {
+        "type": "object",
+        "properties": {
+          "allocated": {
+            "type": "number",
+            "description": "$M allocated.",
+            "minimum": 0
+          },
+          "fy": {
+            "type": "string",
+            "description": "Fiscal year, e.g. FY26. Defaults to the current US federal fiscal year.",
+            "pattern": "^FY\\d{2}$"
+          }
+        },
+        "required": [
+          "allocated"
+        ]
+      },
+      "CreateTopicDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 500
+          },
+          "bin": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 4
+          },
+          "priorityLabel": {
+            "type": "string",
+            "description": "Defaults from the bin: 1 Flagship, 2–3 Core, 4 Emerging.",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "teamId": {
+            "type": "string",
+            "description": "Team org-unit id; the center comes from the team."
+          },
+          "leadId": {
+            "type": "string",
+            "description": "A PI may only create topics they lead."
+          },
+          "tags": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40,
+              "minLength": 1
+            }
+          },
+          "sponsors": {
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            }
+          },
+          "budget": {
+            "$ref": "#/components/schemas/CreateTopicBudgetDto"
+          },
+          "questions": {
+            "description": "Opening research questions, owned by the lead.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 500,
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "name",
+          "bin",
+          "teamId",
+          "leadId"
+        ]
+      },
+      "OrgRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "TopicPersonDto": {
+        "type": "object",
+        "properties": {
+          "person": {
+            "$ref": "#/components/schemas/PersonRefDto"
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "person",
+          "fte"
+        ]
+      },
+      "TopicDetailDto": {
+        "type": "object",
+        "properties": {
+          "lead": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "bin": {
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "type": "number"
+          },
+          "priorityLabel": {
+            "type": "string"
+          },
+          "healthScore": {
+            "type": "number",
+            "description": "0–100, computed."
+          },
+          "health": {
+            "enum": [
+              "healthy",
+              "watch",
+              "at-risk"
+            ],
+            "type": "string"
+          },
+          "leadId": {
+            "type": "string"
+          },
+          "teamId": {
+            "type": "string"
+          },
+          "centerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sponsors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "budget": {
+            "$ref": "#/components/schemas/TopicBudgetDto"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/TopicStatsDto"
+          },
+          "momentum": {
+            "type": "number",
+            "description": "Current healthScore minus the score three months ago."
+          },
+          "trend": {
+            "description": "Monthly healthScore, oldest first, ending with the current month.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "team": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrgRefDto"
+              }
+            ]
+          },
+          "center": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OrgRefDto"
+              }
+            ]
+          },
+          "people": {
+            "description": "Everyone with FTE on the topic, largest allocation first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopicPersonDto"
+            }
+          }
+        },
+        "required": [
+          "lead",
+          "id",
+          "name",
+          "summary",
+          "bin",
+          "priorityLabel",
+          "healthScore",
+          "health",
+          "leadId",
+          "teamId",
+          "centerId",
+          "tags",
+          "sponsors",
+          "budget",
+          "stats",
+          "momentum",
+          "trend",
+          "team",
+          "center",
+          "people"
+        ]
+      },
+      "QuestionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "partially",
+              "answered"
+            ]
+          },
+          "ownerId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "text",
+          "status",
+          "ownerId"
+        ]
+      },
+      "GapDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "addressing",
+              "closing",
+              "closed"
+            ]
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "text",
+          "severity",
+          "status",
+          "ownerId",
+          "questionIds"
+        ]
+      },
+      "WorkBudgetDto": {
+        "type": "object",
+        "properties": {
+          "allocated": {
+            "type": "number"
+          },
+          "spent": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "allocated",
+          "spent"
+        ]
+      },
+      "WorkDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "active",
+              "blocked",
+              "review",
+              "complete"
+            ]
+          },
+          "leadId": {
+            "type": "string"
+          },
+          "memberIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "progress": {
+            "type": "number"
+          },
+          "due": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/WorkBudgetDto"
+          },
+          "fte": {
+            "type": "number"
+          },
+          "gapIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "title",
+          "status",
+          "leadId",
+          "memberIds",
+          "progress",
+          "due",
+          "budget",
+          "fte",
+          "gapIds",
+          "note"
+        ]
+      },
+      "PaperFeedbackDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "who": {
+            "type": "string"
+          },
+          "sentiment": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "who",
+          "sentiment",
+          "text",
+          "date"
+        ]
+      },
+      "PaperDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gapIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grade": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "outstanding",
+              "excellent",
+              "satisfactory",
+              "dissatisfactory"
+            ]
+          },
+          "gradedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "gradedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperFeedbackDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "title",
+          "venue",
+          "published",
+          "authorIds",
+          "questionIds",
+          "gapIds",
+          "workIds",
+          "grade",
+          "gradedBy",
+          "gradedAt",
+          "feedback"
+        ]
+      },
+      "CitationDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "paperId": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "year": {
+            "type": "number"
+          },
+          "org": {
+            "type": "string"
+          },
+          "sector": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "paperId",
+          "topicId",
+          "title",
+          "venue",
+          "year",
+          "org",
+          "sector"
+        ]
+      },
+      "SpineEdgeDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Upstream node id (question → gap → work → paper → citation)."
+          },
+          "to": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "question-gap",
+              "gap-work",
+              "work-paper",
+              "gap-paper",
+              "question-paper",
+              "paper-citation"
+            ]
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "kind"
+        ]
+      },
+      "SpineDto": {
+        "type": "object",
+        "properties": {
+          "topicId": {
+            "type": "string"
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionDto"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GapDto"
+            }
+          },
+          "work": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkDto"
+            }
+          },
+          "papers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperDto"
+            }
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CitationDto"
+            }
+          },
+          "edges": {
+            "description": "Links between the nodes above; edges to records outside the topic are dropped.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpineEdgeDto"
+            }
+          }
+        },
+        "required": [
+          "topicId",
+          "questions",
+          "gaps",
+          "work",
+          "papers",
+          "citations",
+          "edges"
+        ]
+      },
+      "GapTopicRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "watch",
+              "at-risk"
+            ]
+          },
+          "healthScore": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "health",
+          "healthScore"
+        ]
+      },
+      "GapListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "critical",
+              "high",
+              "medium"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "addressing",
+              "closing",
+              "closed"
+            ],
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string"
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "topic": {
+            "$ref": "#/components/schemas/GapTopicRefDto"
+          },
+          "owner": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "covered": {
+            "type": "boolean",
+            "description": "At least one active work item is against this gap."
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "text",
+          "severity",
+          "status",
+          "ownerId",
+          "questionIds",
+          "topic",
+          "owner",
+          "covered"
+        ]
+      },
+      "MentionsDto": {
+        "type": "object",
+        "properties": {
+          "news": {
+            "type": "number"
+          },
+          "policy": {
+            "type": "number"
+          },
+          "social": {
+            "type": "number"
+          },
+          "patents": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "news",
+          "policy",
+          "social",
+          "patents"
+        ]
+      },
+      "MetricTotalsDto": {
+        "type": "object",
+        "properties": {
+          "downloads": {
+            "type": "number"
+          },
+          "views": {
+            "type": "number"
+          },
+          "citations": {
+            "type": "number"
+          },
+          "altmetric": {
+            "type": "number",
+            "description": "Latest attention score."
+          },
+          "mentions": {
+            "$ref": "#/components/schemas/MentionsDto"
+          }
+        },
+        "required": [
+          "downloads",
+          "views",
+          "citations",
+          "altmetric",
+          "mentions"
+        ]
+      },
+      "PaperListItemDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gapIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grade": {
+            "nullable": true,
+            "enum": [
+              "outstanding",
+              "excellent",
+              "satisfactory",
+              "dissatisfactory"
+            ],
+            "type": "string"
+          },
+          "gradedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "gradedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperFeedbackDto"
+            }
+          },
+          "topic": {
+            "$ref": "#/components/schemas/TopicRefDto"
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRefDto"
+            }
+          },
+          "totals": {
+            "description": "Lifetime totals.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "title",
+          "venue",
+          "published",
+          "authorIds",
+          "questionIds",
+          "gapIds",
+          "workIds",
+          "grade",
+          "gradedBy",
+          "gradedAt",
+          "feedback",
+          "topic",
+          "authors",
+          "totals"
+        ]
+      },
+      "TopPaperDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gapIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grade": {
+            "nullable": true,
+            "enum": [
+              "outstanding",
+              "excellent",
+              "satisfactory",
+              "dissatisfactory"
+            ],
+            "type": "string"
+          },
+          "gradedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "gradedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperFeedbackDto"
+            }
+          },
+          "topic": {
+            "$ref": "#/components/schemas/TopicRefDto"
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRefDto"
+            }
+          },
+          "totals": {
+            "description": "Lifetime totals.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
+              }
+            ]
+          },
+          "periodTotals": {
+            "description": "Totals within the requested period.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "title",
+          "venue",
+          "published",
+          "authorIds",
+          "questionIds",
+          "gapIds",
+          "workIds",
+          "grade",
+          "gradedBy",
+          "gradedAt",
+          "feedback",
+          "topic",
+          "authors",
+          "totals",
+          "periodTotals"
+        ]
+      },
+      "AudienceDto": {
+        "type": "object",
+        "properties": {
+          "academic": {
+            "type": "number"
+          },
+          "industry": {
+            "type": "number"
+          },
+          "government": {
+            "type": "number"
+          },
+          "nonprofit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "academic",
+          "industry",
+          "government",
+          "nonprofit"
+        ]
+      },
+      "GeoShareDto": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string"
+          },
+          "share": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "country",
+          "share"
+        ]
+      },
+      "SplitDto": {
+        "type": "object",
+        "properties": {
+          "internal": {
+            "type": "number"
+          },
+          "external": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "internal",
+          "external"
+        ]
+      },
+      "PaperMetricsDto": {
+        "type": "object",
+        "properties": {
+          "paperId": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "month": {
+            "type": "string",
+            "description": "YYYY-MM"
+          },
+          "downloads": {
+            "type": "number"
+          },
+          "views": {
+            "type": "number"
+          },
+          "citations": {
+            "type": "number"
+          },
+          "altmetric": {
+            "type": "number",
+            "description": "Attention score at the end of the month (a level, not an increment)."
+          },
+          "audience": {
+            "$ref": "#/components/schemas/AudienceDto"
+          },
+          "geo": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoShareDto"
+            }
+          },
+          "split": {
+            "$ref": "#/components/schemas/SplitDto"
+          },
+          "mentions": {
+            "$ref": "#/components/schemas/MentionsDto"
+          }
+        },
+        "required": [
+          "paperId",
+          "topicId",
+          "month",
+          "downloads",
+          "views",
+          "citations",
+          "altmetric",
+          "audience",
+          "geo",
+          "split",
+          "mentions"
+        ]
+      },
+      "PaperDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "topicId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "published": {
+            "type": "string",
+            "description": "YYYY-MM-DD"
+          },
+          "authorIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "questionIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gapIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "workIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "grade": {
+            "nullable": true,
+            "enum": [
+              "outstanding",
+              "excellent",
+              "satisfactory",
+              "dissatisfactory"
+            ],
+            "type": "string"
+          },
+          "gradedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "gradedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedback": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperFeedbackDto"
+            }
+          },
+          "topic": {
+            "$ref": "#/components/schemas/TopicRefDto"
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PersonRefDto"
+            }
+          },
+          "totals": {
+            "description": "Lifetime totals.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
+              }
+            ]
+          },
+          "metrics": {
+            "description": "One entry per month, oldest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaperMetricsDto"
+            }
+          },
+          "audience": {
+            "nullable": true,
+            "description": "Shares from the latest month; null with no metrics.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AudienceDto"
+              }
+            ]
+          },
+          "geo": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeoShareDto"
+            }
+          },
+          "split": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SplitDto"
+              }
+            ]
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CitationDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "topicId",
+          "title",
+          "venue",
+          "published",
+          "authorIds",
+          "questionIds",
+          "gapIds",
+          "workIds",
+          "grade",
+          "gradedBy",
+          "gradedAt",
+          "feedback",
+          "topic",
+          "authors",
+          "totals",
+          "metrics",
+          "audience",
+          "geo",
+          "split",
+          "citations"
+        ]
+      },
+      "GradePaperDto": {
+        "type": "object",
+        "properties": {
+          "grade": {
+            "type": "string",
+            "nullable": true,
+            "description": "The new grade, or null to clear it.",
+            "enum": [
+              "outstanding",
+              "excellent",
+              "satisfactory",
+              "dissatisfactory"
+            ]
+          }
+        },
+        "required": [
+          "grade"
+        ]
+      },
+      "OrgRollupDto": {
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "number"
+          },
+          "healthMix": {
+            "$ref": "#/components/schemas/HealthMixDto"
+          },
+          "avgHealthScore": {
+            "type": "number",
+            "nullable": true,
+            "description": "Mean healthScore; null with no topics."
+          },
+          "openGaps": {
+            "type": "number"
+          },
+          "coverage": {
+            "type": "number",
+            "description": "Share of open gaps covered by active work, across the unit's topics. 1 when there are none."
+          },
+          "fte": {
+            "type": "number"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/RollupBudgetDto"
+          }
+        },
+        "required": [
+          "topics",
+          "healthMix",
+          "avgHealthScore",
+          "openGaps",
+          "coverage",
+          "fte",
+          "budget"
+        ]
+      },
+      "OrgTopicDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "bin": {
+            "type": "number"
+          },
+          "health": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "watch",
+              "at-risk"
+            ]
+          },
+          "healthScore": {
+            "type": "number"
+          },
+          "momentum": {
+            "type": "number"
+          },
+          "leadId": {
+            "type": "string"
+          },
+          "openGaps": {
+            "type": "number"
+          },
+          "coverage": {
+            "type": "number"
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "bin",
+          "health",
+          "healthScore",
+          "momentum",
+          "leadId",
+          "openGaps",
+          "coverage",
+          "fte"
+        ]
+      },
+      "OrgTeamDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "lead": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/OrgRollupDto"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgTopicDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "lead",
+          "rollup",
+          "topics"
+        ]
+      },
+      "OrgCenterDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "focus": {
+            "type": "string",
+            "nullable": true
+          },
+          "lead": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/OrgRollupDto"
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgTeamDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "focus",
+          "lead",
+          "rollup",
+          "teams"
+        ]
+      },
+      "OrgDto": {
+        "type": "object",
+        "properties": {
+          "centers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgCenterDto"
+            }
+          },
+          "otherTeams": {
+            "description": "Teams that belong to no center.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrgTeamDto"
+            }
+          }
+        },
+        "required": [
+          "centers",
+          "otherTeams"
+        ]
+      },
+      "SearchHitDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "description": "Primary text: topic/person name, gap text, paper title."
+          },
+          "detail": {
+            "type": "string",
+            "description": "Secondary text: topic health, gap severity, paper venue, person title."
+          },
+          "topicId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Owning topic; null for topics and people."
+          },
+          "score": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "detail",
+          "topicId",
+          "score"
+        ]
+      },
+      "SearchResultsDto": {
+        "type": "object",
+        "properties": {
+          "topics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHitDto"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHitDto"
+            }
+          },
+          "papers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHitDto"
+            }
+          },
+          "people": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHitDto"
+            }
+          }
+        },
+        "required": [
+          "topics",
+          "gaps",
+          "papers",
+          "people"
+        ]
+      },
+      "CenterScoreDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          },
+          "lead": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PersonRefDto"
+              }
+            ]
+          },
+          "rollup": {
+            "$ref": "#/components/schemas/OrgRollupDto"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code",
+          "lead",
+          "rollup"
+        ]
+      },
+      "BinInvestmentDto": {
+        "type": "object",
+        "properties": {
+          "bin": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          },
+          "topics": {
+            "type": "number"
+          },
+          "topicShare": {
+            "type": "number",
+            "description": "Shares are 0–1 of the scoped portfolio total."
+          },
+          "budget": {
+            "type": "number",
+            "description": "$M allocated."
+          },
+          "budgetShare": {
+            "type": "number"
+          },
+          "fte": {
+            "type": "number"
+          },
+          "fteShare": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "bin",
+          "label",
+          "topics",
+          "topicShare",
+          "budget",
+          "budgetShare",
+          "fte",
+          "fteShare"
+        ]
+      },
+      "DecisionDto": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "enum": [
+              "Resourcing",
+              "Operations",
+              "Portfolio"
+            ]
+          },
+          "lead": {
+            "type": "string",
+            "description": "One-line ask."
+          },
+          "body": {
+            "type": "string",
+            "description": "Why, from the data."
+          },
+          "topicId": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "tag",
+          "lead",
+          "body",
+          "topicId"
+        ]
+      },
+      "BriefDto": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/PeriodDto"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "preparedFor": {
+            "$ref": "#/components/schemas/PersonRefDto"
+          },
+          "executiveSummary": {
+            "description": "01 Executive summary: plain-sentence findings.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "atAGlance": {
+            "description": "02 Portfolio at a glance.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PortfolioSummaryDto"
+              }
+            ]
+          },
+          "centers": {
+            "description": "03 Centers scorecard.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CenterScoreDto"
+            }
+          },
+          "exposure": {
+            "description": "04 Exposure register: open critical/high gaps with no active work.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GapListItemDto"
+            }
+          },
+          "investment": {
+            "description": "05 Investment vs priority, by bin.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BinInvestmentDto"
+            }
+          },
+          "impact": {
+            "description": "06 Impact highlights: most-read papers in the period.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TopPaperDto"
+            }
+          },
+          "decisions": {
+            "description": "07 Decisions requested: rule-based prompts, most urgent first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionDto"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "generatedAt",
+          "preparedFor",
+          "executiveSummary",
+          "atAGlance",
+          "centers",
+          "exposure",
+          "investment",
+          "impact",
+          "decisions"
+        ]
+      }
+    }
+  }
+}
