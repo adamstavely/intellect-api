@@ -2340,13 +2340,34 @@
           },
           "healthScore": {
             "type": "number"
+          },
+          "bin": {
+            "type": "number",
+            "description": "The topic's priority tier, 1 (top) to 4."
           }
         },
         "required": [
           "id",
           "name",
           "health",
-          "healthScore"
+          "healthScore",
+          "bin"
+        ]
+      },
+      "GapInvestmentDto": {
+        "type": "object",
+        "properties": {
+          "budget": {
+            "type": "number",
+            "description": "Budget allocated, in $M."
+          },
+          "fte": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "budget",
+          "fte"
         ]
       },
       "GapListItemDto": {
@@ -2402,6 +2423,18 @@
           "covered": {
             "type": "boolean",
             "description": "At least one active work item is against this gap."
+          },
+          "activeWork": {
+            "type": "number",
+            "description": "Active work items against this gap; covered when 1 or more."
+          },
+          "invested": {
+            "description": "What the work in flight against this gap (anything not complete) has been allocated.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GapInvestmentDto"
+              }
+            ]
           }
         },
         "required": [
@@ -2414,7 +2447,9 @@
           "questionIds",
           "topic",
           "owner",
-          "covered"
+          "covered",
+          "activeWork",
+          "invested"
         ]
       },
       "MentionsDto": {

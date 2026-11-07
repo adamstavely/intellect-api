@@ -150,6 +150,11 @@ describe('read endpoints', () => {
       const body = (await get('/gaps?topicId=t-neuro')) as unknown as Body[];
       expect(body).toHaveLength(5);
       expect(body.filter((g) => g.covered).map((g) => g.id).sort()).toEqual(['g1', 'g5']);
+      const byId = new Map(body.map((g) => [g.id, g]));
+      // g2's only work is blocked: invested in, but not covered. g5 has one active item and one in review.
+      expect(byId.get('g2')).toMatchObject({ covered: false, activeWork: 0, invested: { budget: 0.9, fte: 1.2 }, topic: { bin: 1 } });
+      expect(byId.get('g5')).toMatchObject({ covered: true, activeWork: 1, invested: { budget: 0.9, fte: 1.7 } });
+      expect(byId.get('g3')).toMatchObject({ activeWork: 0, invested: { budget: 0, fte: 0 } });
       expect(await get('/gaps?topicId=t-climate', 'mo')).toEqual([]);
       await get('/gaps?limit=0', 'hv', 400);
     });

@@ -15,6 +15,11 @@ export function byAttention(healthOf: (topicId: string) => number) {
     SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || healthOf(a.topicId) - healthOf(b.topicId) || a.id.localeCompare(b.id);
 }
 
+const roundInvested = (i: { budget: number; fte: number } | undefined) => ({
+  budget: Math.round((i?.budget ?? 0) * 100) / 100,
+  fte: Math.round((i?.fte ?? 0) * 10) / 10,
+});
+
 @Injectable()
 export class GapsService {
   constructor(
@@ -30,15 +35,30 @@ export class GapsService {
     if (q.severity) filter.push({ term: { severity: q.severity } });
     if (q.status) filter.push({ term: { status: q.status } });
 
-    const activeWork = sources(
-      await this.es.search<Pick<Work, 'gapIds'>>({
+    // Work in flight (anything not complete): `active` items cover a gap; all of it counts as invested in it.
+    const inFlight = sources(
+      await this.es.search<Pick<Work, 'gapIds' | 'status' | 'budget' | 'fte'>>({
         index: ALIASES.work,
         size: MAX_DOCS,
-        _source: ['gapIds'],
-        query: { bool: { filter: [scope, { term: { status: 'active' } }, ...(q.topicId ? [{ term: { topicId: q.topicId } }] : [])] } },
+        _source: ['gapIds', 'status', 'budget', 'fte'],
+        query: {
+          bool: {
+            filter: [scope, ...(q.topicId ? [{ term: { topicId: q.topicId } }] : [])],
+            must_not: [{ term: { status: 'complete' } }],
+          },
+        },
       }),
     );
-    const covered = new Set(activeWork.flatMap((w) => w.gapIds));
+    const activeOn = new Map<string, number>();
+    const invested = new Map<string, { budget: number; fte: number }>();
+    for (const w of inFlight) {
+      for (const id of w.gapIds) {
+        if (w.status === 'active') activeOn.set(id, (activeOn.get(id) ?? 0) + 1);
+        const i = invested.get(id) ?? { budget: 0, fte: 0 };
+        invested.set(id, { budget: i.budget + w.budget.allocated, fte: i.fte + w.fte });
+      }
+    }
+    const covered = new Set(activeOn.keys());
     if (q.attention) {
       mustNot.push({ term: { status: 'closed' } });
       if (covered.size) mustNot.push({ terms: { id: [...covered] } });
@@ -46,7 +66,7 @@ export class GapsService {
 
     const gaps = sources(await this.es.search<Gap>({ index: ALIASES.gaps, size: MAX_DOCS, query: { bool: { filter, must_not: mustNot } } }));
     const [topics, owners] = await Promise.all([
-      getMany<Topic>(this.es, ALIASES.topics, gaps.map((g) => g.topicId), ['id', 'name', 'health', 'healthScore']),
+      getMany<Topic>(this.es, ALIASES.topics, gaps.map((g) => g.topicId), ['id', 'name', 'health', 'healthScore', 'bin']),
       getMany<Person>(this.es, ALIASES.people, gaps.map((g) => g.ownerId), ['id', 'name', 'initials']),
     ]);
 
@@ -58,9 +78,11 @@ export class GapsService {
         const o = owners.get(g.ownerId);
         return {
           ...g,
-          topic: { id: g.topicId, name: t?.name ?? g.topicId, health: t?.health ?? 'watch', healthScore: t?.healthScore ?? 0 },
+          topic: { id: g.topicId, name: t?.name ?? g.topicId, health: t?.health ?? 'watch', healthScore: t?.healthScore ?? 0, bin: t?.bin ?? 4 },
           owner: o ? { id: o.id, name: o.name, initials: o.initials } : null,
           covered: covered.has(g.id),
+          activeWork: activeOn.get(g.id) ?? 0,
+          invested: roundInvested(invested.get(g.id)),
         };
       });
   }
