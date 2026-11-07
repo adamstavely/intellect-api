@@ -1,0 +1,118 @@
+import type { INestApplication } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import type { Client } from '@elastic/elasticsearch';
+import { createServer, IncomingMessage, Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import request from 'supertest';
+import type { App } from 'supertest/types';
+import { AppModule } from '../../src/app.module';
+import { AuditForwarder } from '../../src/audit/audit-forwarder.service';
+import { AuditEvent, sign } from '../../src/audit/audit-event';
+import { AuditService } from '../../src/audit/audit.service';
+import { migrate } from '../../src/elastic/migrate';
+import { seed } from '../../src/seed/seed';
+import { resetCluster, testClient } from './es';
+
+type Delivery = { headers: IncomingMessage['headers']; body: string };
+
+describe('audit trail', () => {
+  let es: Client;
+  let app: INestApplication<App>;
+  let hook: Server;
+  const deliveries: Delivery[] = [];
+  let hookStatus = 200;
+
+  const call = (method: 'get' | 'patch', path: string, user?: string, body?: object) => {
+    let req = request(app.getHttpServer())[method](path);
+    if (user) req = req.set('X-Intellect-User', user);
+    return body ? req.send(body) : req;
+  };
+  const audited = async (): Promise<AuditEvent[]> => {
+    await app.get(AuditService).flush();
+    await es.indices.refresh({ index: 'audit' });
+    const res = await es.search<AuditEvent>({ index: 'audit', size: 100, sort: [{ at: 'asc' }, { id: 'asc' }] });
+    return res.hits.hits.map((h) => h._source!);
+  };
+
+  beforeAll(async () => {
+    hook = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        deliveries.push({ headers: req.headers, body });
+        res.writeHead(hookStatus).end();
+      });
+    });
+    await new Promise<void>((r) => hook.listen(0, '127.0.0.1', r));
+    process.env.AUDIT_WEBHOOK_URL = `http://localhost:${(hook.address() as AddressInfo).port}/audit`;
+    process.env.AUDIT_WEBHOOK_SECRET = 's3cret';
+    // Long enough that the timer never fires mid-test: the tests drive forward() themselves.
+    process.env.AUDIT_FORWARD_INTERVAL_MS = '3600000';
+
+    es = testClient();
+    await resetCluster(es);
+    await migrate(es);
+    await seed(es, '2026-11-06');
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
+    app = moduleRef.createNestApplication<INestApplication<App>>();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+    await es.close();
+    await new Promise((r) => hook.close(r));
+    delete process.env.AUDIT_WEBHOOK_URL;
+    delete process.env.AUDIT_WEBHOOK_SECRET;
+    delete process.env.AUDIT_FORWARD_INTERVAL_MS;
+  });
+
+  it('records every request: reads, refused writes and unknown users, with the request id', async () => {
+    const read = await call('get', '/topics/t-neuro', 'hv').expect(200);
+    await call('patch', '/papers/p4/grade', 'mo', { grade: 'excellent' }).expect(403);
+    await call('get', '/topics', 'nobody').expect(401);
+    await call('get', '/health').expect((r) => expect(r.status).toBeLessThan(500));
+
+    const events = await audited();
+    expect(events.map((e) => e.action)).toEqual(['GET /topics/:id', 'PATCH /papers/:id/grade', 'GET /topics']);
+    const [view, grade, refused] = events;
+    expect(view).toMatchObject({
+      id: read.headers['x-request-id'],
+      actor: { id: 'hv', role: 'chief', authenticated: true },
+      params: { id: 't-neuro' },
+      body: null,
+      outcome: { status: 200, ok: true },
+    });
+    expect(grade).toMatchObject({ actor: { id: 'mo', role: 'pi' }, params: { id: 'p4' }, body: { grade: 'excellent' }, outcome: { status: 403, ok: false } });
+    expect(refused).toMatchObject({ actor: { id: 'nobody', authenticated: false }, outcome: { status: 401 } });
+  });
+
+  it('forwards events to the webhook, signed, and moves the cursor only on success', async () => {
+    const forwarder = app.get(AuditForwarder);
+    deliveries.length = 0;
+
+    expect(await forwarder.forward()).toBe(3);
+    expect(deliveries).toHaveLength(1);
+    const [d] = deliveries;
+    expect(d.headers['x-intellect-signature']).toBe(sign('s3cret', String(d.headers['x-intellect-timestamp']), d.body));
+    expect((JSON.parse(d.body) as { events: AuditEvent[] }).events.map((e) => e.action)).toEqual([
+      'GET /topics/:id',
+      'PATCH /papers/:id/grade',
+      'GET /topics',
+    ]);
+
+    // Nothing new: nothing sent.
+    expect(await forwarder.forward()).toBe(0);
+
+    // A new event while the webhook is down: delivery fails and the cursor stays put…
+    await call('get', '/me', 'hv').expect(200);
+    await audited();
+    hookStatus = 503;
+    await expect(forwarder.forward()).rejects.toThrow('webhook answered 503');
+    // …so the event goes out once it's back up.
+    hookStatus = 200;
+    deliveries.length = 0;
+    expect(await forwarder.forward()).toBe(1);
+    expect((JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events[0]).toMatchObject({ action: 'GET /me' });
+  });
+});

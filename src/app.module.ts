@@ -1,6 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { AuditModule } from './audit/audit.module';
 import { RolesGuard } from './auth/roles';
 import { StubAuthGuard } from './auth/stub-auth.guard';
 import { BriefController } from './brief/brief.controller';
@@ -34,6 +35,7 @@ import { TopicsService } from './topics/topics.service';
     ScopeModule,
     TopicHealthModule,
     ProbeModule,
+    AuditModule,
   ],
   controllers: [
     MeController,

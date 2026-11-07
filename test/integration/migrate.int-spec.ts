@@ -16,7 +16,7 @@ describe('es:migrate', () => {
     const results = await migrate(es);
     expect(results.map((r) => r.action)).toEqual(INDICES.map(() => 'created'));
     expect(INDICES.map((d) => d.alias).sort()).toEqual(
-      ['citations', 'gaps', 'org-units', 'paper-metrics', 'papers', 'people', 'questions', 'topic-health-history', 'topics', 'work'].sort(),
+      ['audit', 'audit-cursor', 'citations', 'gaps', 'org-units', 'paper-metrics', 'papers', 'people', 'questions', 'topic-health-history', 'topics', 'work'].sort(),
     );
 
     for (const def of INDICES) {
@@ -25,6 +25,8 @@ describe('es:migrate', () => {
       const mapping = await es.indices.getMapping({ index: def.alias });
       const m = mapping[indexName(def)].mappings;
       expect(m.dynamic).toBe('strict');
+      // The audit cursor is a single settings document with no id field of its own.
+      if (def.alias === 'audit-cursor') continue;
       const idField = def.alias === 'paper-metrics' ? 'paperId' : def.alias === 'topic-health-history' ? 'topicId' : 'id';
       expect(m.properties?.[idField]).toEqual({ type: 'keyword' });
     }
