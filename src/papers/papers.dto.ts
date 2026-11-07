@@ -38,7 +38,7 @@ export class TopPapersQueryDto {
   @Max(20)
   limit?: number;
 
-  /** `ytd` (default), `FY26` or `FY26-Q2`. */
+  /** `ytd` (default), `FY26`, `FY26-Q2` or a month, `2026-11`. */
   @IsOptional()
   @IsString()
   period?: string;

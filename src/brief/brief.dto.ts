@@ -6,7 +6,7 @@ import { TopPaperDto } from '../papers/papers.dto';
 import { PeriodDto, PortfolioSummaryDto } from '../portfolio/portfolio.dto';
 
 export class BriefQueryDto {
-  /** `FY26-Q2`, `FY26` or `ytd` (default). */
+  /** `FY26-Q2`, `FY26`, a month (`2026-11`) or `ytd` (default). */
   @IsOptional()
   @IsString()
   period?: string;

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
 export interface Period {
-  /** As requested, normalised: `ytd`, `FY26` or `FY26-Q2`. */
+  /** As requested, normalised: `ytd`, `FY26`, `FY26-Q2` or a month, `2026-11`. */
   label: string;
   /** Inclusive ISO dates. */
   from: string;
@@ -14,7 +14,7 @@ export interface Period {
 const iso = (y: number, m: number, d: number) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
 
 /**
- * Parses a reporting period. `ytd` is the calendar year to `asOf`. Fiscal years follow the US
+ * Parses a reporting period. `ytd` is the calendar year to `asOf`; `2026-11` is that calendar month. Fiscal years follow the US
  * federal calendar (FY26 runs 2025-10-01 to 2026-09-30; Q1 is Oct–Dec). Periods that run past
  * `asOf` end at `asOf`.
  */
@@ -25,6 +25,7 @@ export function parsePeriod(raw: string | undefined, asOf: string): Period {
   let to: string;
 
   const fy = /^FY(\d{2})(?:-Q([1-4]))?$/i.exec(value);
+  const month = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
   if (value.toLowerCase() === 'ytd') {
     label = 'ytd';
     from = `${asOf.slice(0, 4)}-01-01`;
@@ -41,8 +42,12 @@ export function parsePeriod(raw: string | undefined, asOf: string): Period {
       from = iso(year - 1, 10, 1);
       to = iso(year, 9, 30);
     }
+  } else if (month) {
+    label = value;
+    from = iso(Number(month[1]), Number(month[2]), 1);
+    to = iso(Number(month[1]), Number(month[2]) + 1, 0);
   } else {
-    throw new BadRequestException(`period must be ytd, FYyy or FYyy-Qn; got ${value}`);
+    throw new BadRequestException(`period must be ytd, FYyy, FYyy-Qn or YYYY-MM; got ${value}`);
   }
 
   if (to > asOf) to = asOf;
