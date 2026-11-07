@@ -44,6 +44,16 @@ export interface TopicStats {
   work: number;
   papers: number;
   fte: number;
+  /** Paper grade roll-up: count per grade, plus papers not yet graded. */
+  grades: GradeCounts;
+}
+
+export interface GradeCounts {
+  outstanding: number;
+  excellent: number;
+  satisfactory: number;
+  dissatisfactory: number;
+  ungraded: number;
 }
 
 export interface Topic {

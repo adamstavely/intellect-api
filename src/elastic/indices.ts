@@ -84,6 +84,7 @@ export const INDICES: IndexDefinition[] = [
         work: integer,
         papers: integer,
         fte: float,
+        grades: object({ outstanding: integer, excellent: integer, satisfactory: integer, dissatisfactory: integer, ungraded: integer }),
       }),
       momentum: integer,
       trend: integer,

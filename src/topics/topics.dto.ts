@@ -1,5 +1,18 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { CitationDto, GapDto, PaperDto, PersonRefDto, QuestionDto, TopicDto, WorkDto } from '../model/model.dto';
 
 export const TOPIC_SORTS = ['risk', 'name', 'health', 'momentum', 'bin'] as const;
@@ -63,4 +76,74 @@ export class SpineDto {
   citations!: CitationDto[];
   /** Links between the nodes above; edges to records outside the topic are dropped. */
   edges!: SpineEdgeDto[];
+}
+
+export class CreateTopicBudgetDto {
+  /** $M allocated. */
+  @IsNumber()
+  @Min(0)
+  allocated!: number;
+
+  /** Fiscal year, e.g. FY26. Defaults to the current US federal fiscal year. */
+  @IsOptional()
+  @Matches(/^FY\d{2}$/)
+  fy?: string;
+}
+
+export class CreateTopicDto {
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  summary?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(4)
+  bin!: number;
+
+  /** Defaults from the bin: 1 Flagship, 2–3 Core, 4 Emerging. */
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  priorityLabel?: string;
+
+  /** Team org-unit id; the center comes from the team. */
+  @IsString()
+  teamId!: string;
+
+  /** A PI may only create topics they lead. */
+  @IsString()
+  leadId!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 40, { each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 80, { each: true })
+  sponsors?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CreateTopicBudgetDto)
+  budget?: CreateTopicBudgetDto;
+
+  /** Opening research questions, owned by the lead. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @Length(1, 500, { each: true })
+  questions?: string[];
 }

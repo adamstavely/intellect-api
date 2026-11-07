@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
-import { ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { ApiForbiddenResponse, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { Roles } from '../auth/roles';
 import { CurrentUser } from '../auth/current-user';
 import type { Person } from '../model/types';
-import { PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
+import { GradePaperDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
 import { PapersService } from './papers.service';
 
 @ApiTags('papers')
@@ -26,5 +27,13 @@ export class PapersController {
   @Get(':id')
   get(@CurrentUser() user: Person, @Param('id') id: string): Promise<PaperDetailDto> {
     return this.papers.get(user, id);
+  }
+
+  /** Grade a paper. Chief only. */
+  @Patch(':id/grade')
+  @Roles('chief')
+  @ApiForbiddenResponse({ description: 'Caller is not the Chief' })
+  grade(@CurrentUser() user: Person, @Param('id') id: string, @Body() body: GradePaperDto): Promise<PaperDetailDto> {
+    return this.papers.grade(user, id, body);
   }
 }

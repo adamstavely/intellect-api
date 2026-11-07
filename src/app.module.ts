@@ -1,7 +1,10 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { RolesGuard } from './auth/roles';
 import { StubAuthGuard } from './auth/stub-auth.guard';
+import { BriefController } from './brief/brief.controller';
+import { BriefService } from './brief/brief.service';
 import { Clock } from './common/clock';
 import configuration from './config/configuration';
 import { ElasticModule } from './elastic/elastic.module';
@@ -41,6 +44,7 @@ import { TopicsService } from './topics/topics.service';
     PapersController,
     OrgController,
     SearchController,
+    BriefController,
   ],
   providers: [
     Clock,
@@ -51,7 +55,9 @@ import { TopicsService } from './topics/topics.service';
     PapersService,
     OrgService,
     SearchService,
+    BriefService,
     { provide: APP_GUARD, useClass: StubAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_PIPE, useValue: new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }) },
   ],
 })

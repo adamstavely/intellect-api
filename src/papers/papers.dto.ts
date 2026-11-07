@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, ValidateIf } from 'class-validator';
 import {
   AudienceDto,
   CitationDto,
@@ -73,4 +73,13 @@ export class PaperDetailDto extends PaperListItemDto {
   geo!: GeoShareDto[];
   split!: SplitDto | null;
   citations!: CitationDto[];
+}
+
+export const PAPER_GRADES = ['outstanding', 'excellent', 'satisfactory', 'dissatisfactory'] as const;
+
+export class GradePaperDto {
+  /** The new grade, or null to clear it. */
+  @ValidateIf((_, value) => value !== null)
+  @IsIn(PAPER_GRADES)
+  grade!: 'outstanding' | 'excellent' | 'satisfactory' | 'dissatisfactory' | null;
 }

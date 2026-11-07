@@ -248,7 +248,7 @@ export async function transformPrototype(
       budget: { allocated: t.budget.allocated, spent: t.budget.spent, fy: t.budget.fy },
       stats: topicStats({
         questions: questions.filter((q) => q.topicId === t.id).length,
-        papers: papers.filter((p) => p.topicId === t.id).length,
+        papers: papers.filter((p) => p.topicId === t.id),
         fte,
         gaps: tGaps,
         work: tWork,

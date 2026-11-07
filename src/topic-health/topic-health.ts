@@ -1,4 +1,4 @@
-import type { Gap, HealthBand, TopicStats, Work } from '../model/types';
+import type { Gap, GradeCounts, HealthBand, Paper, TopicStats, Work } from '../model/types';
 
 /**
  * Topic health, coverage and momentum: the one place the formula lives (milestone-1 plan §1).
@@ -111,8 +111,14 @@ export function momentum(trend: number[]): number {
 
 export interface StatsInputs extends HealthInputs {
   questions: number;
-  papers: number;
+  papers: Pick<Paper, 'grade'>[];
   fte: number;
+}
+
+export function gradeCounts(papers: Pick<Paper, 'grade'>[]): GradeCounts {
+  const counts: GradeCounts = { outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 0 };
+  for (const p of papers) counts[p.grade ?? 'ungraded']++;
+  return counts;
 }
 
 export function topicStats(inputs: StatsInputs): TopicStats {
@@ -122,8 +128,9 @@ export function topicStats(inputs: StatsInputs): TopicStats {
     openGaps: inputs.gaps.filter(isOpenGap).length,
     coverage: Math.round(coverage(inputs.gaps, inputs.work) * 1000) / 1000,
     work: inputs.work.length,
-    papers: inputs.papers,
+    papers: inputs.papers.length,
     fte: Math.round(inputs.fte * 10) / 10,
+    grades: gradeCounts(inputs.papers),
   };
 }
 

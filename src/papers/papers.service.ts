@@ -7,7 +7,8 @@ import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Citation, Paper, PaperMetrics, Person, Topic } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
-import type { MetricTotalsDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
+import { TopicRollupService } from '../topic-health/topic-rollup.service';
+import type { GradePaperDto, MetricTotalsDto, PaperDetailDto, PaperListItemDto, PapersQueryDto, TopPaperDto, TopPapersQueryDto } from './papers.dto';
 
 const EMPTY_TOTALS: MetricTotalsDto = { downloads: 0, views: 0, citations: 0, altmetric: 0, mentions: { news: 0, policy: 0, social: 0, patents: 0 } };
 
@@ -52,7 +53,21 @@ export class PapersService {
     @Inject(ES_CLIENT) private readonly es: Client,
     private readonly scope: ScopeService,
     private readonly clock: Clock,
+    private readonly rollups: TopicRollupService,
   ) {}
+
+  /**
+   * Sets (or clears) a paper's grade, records who graded it and when, then recomputes the topic's
+   * grade roll-up. Chief only; the controller enforces the role.
+   */
+  async grade(user: Person, id: string, { grade }: GradePaperDto): Promise<PaperDetailDto> {
+    const paper = (await getMany<Paper>(this.es, ALIASES.papers, [id], ['topicId'])).get(id);
+    if (!paper) throw new NotFoundException('Paper not found');
+    const graded = grade === null ? { grade: null, gradedBy: null, gradedAt: null } : { grade, gradedBy: user.id, gradedAt: new Date().toISOString() };
+    await this.es.update({ index: ALIASES.papers, id, doc: graded, refresh: 'wait_for', retry_on_conflict: 3 });
+    await this.rollups.recompute(paper.topicId, this.clock.today());
+    return this.get(user, id);
+  }
 
   async list(user: Person, q: PapersQueryDto): Promise<PaperListItemDto[]> {
     const filter: estypes.QueryDslQueryContainer[] = [await this.scope.filter(user)];

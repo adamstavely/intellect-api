@@ -18,7 +18,8 @@
     "test:int": "jest --config jest.int.config.js --runInBand",
     "es:migrate": "ts-node scripts/es-migrate.ts",
     "es:seed": "ts-node scripts/es-seed.ts",
-    "openapi:export": "nest build && node dist/export-openapi.js"
+    "openapi:export": "nest build && node dist/export-openapi.js",
+    "es:reconcile": "ts-node scripts/es-reconcile.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "8.19.2",
