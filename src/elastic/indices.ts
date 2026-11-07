@@ -76,6 +76,7 @@ export const INDICES: IndexDefinition[] = [
       tags: keyword,
       sponsors: keyword,
       budget: object({ allocated: float, spent: float, fy: keyword }),
+      plannedFte: float,
       stats: object({
         questions: integer,
         gaps: integer,

@@ -70,7 +70,7 @@ describe('writes, brief and reconcile', () => {
     const base = { name: 'Neuromorphic Sensing', bin: 3, teamId: 'team-cognitive-systems', leadId: 'mo' };
 
     it('lets a PI create a topic they lead, with opening questions', async () => {
-      const res = await create('mo', { ...base, tags: ['edge', ' edge '], questions: ['Can event cameras run at 1 mW?'], budget: { allocated: 0.4 } }).expect(201);
+      const res = await create('mo', { ...base, tags: ['edge', ' edge '], questions: ['Can event cameras run at 1 mW?'], budget: { allocated: 0.4 }, plannedFte: 2.5 }).expect(201);
       expect(res.body).toMatchObject({
         id: 't-neuromorphic-sensing',
         priorityLabel: 'Core',
@@ -78,6 +78,7 @@ describe('writes, brief and reconcile', () => {
         centerId: 'sl-intel',
         tags: ['edge'],
         budget: { allocated: 0.4, spent: 0, fy: 'FY27' },
+        plannedFte: 2.5,
         health: 'healthy',
         stats: { questions: 1, gaps: 0, coverage: 1 },
         lead: { id: 'mo' },
@@ -91,6 +92,7 @@ describe('writes, brief and reconcile', () => {
     it('gives a clashing name a suffixed id', async () => {
       const res = await create('hv', base).expect(201);
       expect(res.body.id).toBe('t-neuromorphic-sensing-2');
+      expect(res.body.plannedFte).toBe(0);
     });
 
     it('rejects a PI naming someone else as lead, and non-PI staff', async () => {
@@ -104,6 +106,8 @@ describe('writes, brief and reconcile', () => {
       await create('hv', { ...base, health: 'healthy' }).expect(400);
       await create('hv', { ...base, teamId: 'sl-intel' }).expect(400);
       await create('hv', { ...base, leadId: 'nobody' }).expect(400);
+      await create('hv', { ...base, plannedFte: 25 }).expect(400);
+      await create('hv', { ...base, plannedFte: 1.25 }).expect(400);
     });
   });
 

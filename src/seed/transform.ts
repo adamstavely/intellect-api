@@ -247,6 +247,8 @@ export async function transformPrototype(
       tags: t.tags,
       sponsors: t.sponsors,
       budget: { allocated: t.budget.allocated, spent: t.budget.spent, fy: t.budget.fy },
+      // The prototype has no staffing plan; seed one at today's allocation.
+      plannedFte: Math.round(fte * 10) / 10,
       stats: topicStats({
         questions: questions.filter((q) => q.topicId === t.id).length,
         papers: papers.filter((p) => p.topicId === t.id),

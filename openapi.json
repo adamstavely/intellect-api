@@ -1603,6 +1603,10 @@
           "budget": {
             "$ref": "#/components/schemas/TopicBudgetDto"
           },
+          "plannedFte": {
+            "type": "number",
+            "description": "Full-time equivalents the topic is planned to have; `stats.fte` is what people are actually allocated."
+          },
           "stats": {
             "$ref": "#/components/schemas/TopicStatsDto"
           },
@@ -1634,6 +1638,7 @@
           "tags",
           "sponsors",
           "budget",
+          "plannedFte",
           "stats",
           "momentum",
           "trend"
@@ -1709,6 +1714,12 @@
           },
           "budget": {
             "$ref": "#/components/schemas/CreateTopicBudgetDto"
+          },
+          "plannedFte": {
+            "type": "number",
+            "description": "Full-time equivalents planned for the topic, 0–20 in steps of 0.1; default 0.",
+            "minimum": 0,
+            "maximum": 20
           },
           "questions": {
             "description": "Opening research questions, owned by the lead.",
@@ -1836,6 +1847,10 @@
           "budget": {
             "$ref": "#/components/schemas/TopicBudgetDto"
           },
+          "plannedFte": {
+            "type": "number",
+            "description": "Full-time equivalents the topic is planned to have; `stats.fte` is what people are actually allocated."
+          },
           "stats": {
             "$ref": "#/components/schemas/TopicStatsDto"
           },
@@ -1892,6 +1907,7 @@
           "tags",
           "sponsors",
           "budget",
+          "plannedFte",
           "stats",
           "momentum",
           "trend",
