@@ -1,4 +1,4 @@
-import { PersonRefDto } from '../model/model.dto';
+import { CollaborationCountsDto, PersonRefDto } from '../model/model.dto';
 
 export class HealthMixDto {
   healthy!: number;
@@ -21,6 +21,10 @@ export class OrgRollupDto {
   coverage!: number;
   fte!: number;
   budget!: RollupBudgetDto;
+  /** Papers published across the unit's topics. */
+  papers!: number;
+  /** How many of those papers were unilateral vs. joint; the two sum to `papers`. */
+  collaboration!: CollaborationCountsDto;
 }
 
 export class OrgTopicDto {

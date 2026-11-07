@@ -62,7 +62,7 @@ export class TopicsService {
       tags: tidy(body.tags),
       sponsors: tidy(body.sponsors),
       budget: { allocated: body.budget?.allocated ?? 0, spent: 0, fy: body.budget?.fy ?? fiscalYear(today) },
-      stats: { questions: 0, gaps: 0, openGaps: 0, coverage: 1, work: 0, papers: 0, fte: 0, grades: { outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 0 } },
+      stats: { questions: 0, gaps: 0, openGaps: 0, coverage: 1, work: 0, papers: 0, fte: 0, grades: { outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 0 }, collaboration: { unilateral: 0, joint: 0 } },
       momentum: 0,
       trend: [],
     };

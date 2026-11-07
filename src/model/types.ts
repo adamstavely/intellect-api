@@ -46,6 +46,13 @@ export interface TopicStats {
   fte: number;
   /** Paper grade roll-up: count per grade, plus papers not yet graded. */
   grades: GradeCounts;
+  /** Papers done alone vs. with partner labs; the two sum to `papers`. */
+  collaboration: CollaborationCounts;
+}
+
+export interface CollaborationCounts {
+  unilateral: number;
+  joint: number;
 }
 
 export interface GradeCounts {
@@ -129,6 +136,8 @@ export interface Paper {
   /** ISO date, YYYY-MM-DD. */
   published: string;
   authorIds: string[];
+  /** Outside labs the paper was written with. Empty means unilateral; any partner makes it joint. */
+  partners: string[];
   questionIds: string[];
   gapIds: string[];
   workIds: string[];

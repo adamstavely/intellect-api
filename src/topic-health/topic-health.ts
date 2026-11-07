@@ -1,4 +1,4 @@
-import type { Gap, GradeCounts, HealthBand, Paper, TopicStats, Work } from '../model/types';
+import type { CollaborationCounts, Gap, GradeCounts, HealthBand, Paper, TopicStats, Work } from '../model/types';
 
 /**
  * Topic health, coverage and momentum: the one place the formula lives (milestone-1 plan §1).
@@ -111,7 +111,7 @@ export function momentum(trend: number[]): number {
 
 export interface StatsInputs extends HealthInputs {
   questions: number;
-  papers: Pick<Paper, 'grade'>[];
+  papers: Pick<Paper, 'grade' | 'partners'>[];
   fte: number;
 }
 
@@ -119,6 +119,12 @@ export function gradeCounts(papers: Pick<Paper, 'grade'>[]): GradeCounts {
   const counts: GradeCounts = { outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 0 };
   for (const p of papers) counts[p.grade ?? 'ungraded']++;
   return counts;
+}
+
+/** A paper with any partner lab is joint; one without is unilateral. */
+export function collaborationCounts(papers: Pick<Paper, 'partners'>[]): CollaborationCounts {
+  const joint = papers.filter((p) => p.partners?.length).length;
+  return { unilateral: papers.length - joint, joint };
 }
 
 export function topicStats(inputs: StatsInputs): TopicStats {
@@ -131,6 +137,7 @@ export function topicStats(inputs: StatsInputs): TopicStats {
     papers: inputs.papers.length,
     fte: Math.round(inputs.fte * 10) / 10,
     grades: gradeCounts(inputs.papers),
+    collaboration: collaborationCounts(inputs.papers),
   };
 }
 

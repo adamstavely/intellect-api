@@ -150,6 +150,7 @@
     {
       id:"p1", topic:"t-neuro", title:"Sparse Spiking Networks Approach Dense Accuracy at 40× Lower Energy",
       venue:"Nature Machine Intelligence", year:2025, month:"Nov", authors:["mo","ec","jt"],
+      partners:["Sandia National Laboratories"],
       addresses:["q1"], gaps:["g1"],
       reads:{ downloads:18420, views:46100, citations:73, altmetric:284 },
       readTrend:series([200,420,690,1100,1640,2200,2950,3700,4500,5400,6300,7200]),
@@ -181,6 +182,7 @@
     {
       id:"p5", topic:"t-carbon", title:"Seawater-Buffered Mineralization for Sub-$80/ton CO₂ Capture",
       venue:"Joule", year:2026, month:"Feb", authors:["sa","rb"],
+      partners:["NREL","Scripps Institution of Oceanography"],
       addresses:["q5"], gaps:["g6"],
       reads:{ downloads:12600, views:33800, citations:21, altmetric:512 },
       readTrend:series([180,460,820,1280,1840,2500,3260,4120,5080,6140,7300,8560]),
