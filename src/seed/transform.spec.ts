@@ -42,7 +42,8 @@ describe('seed transform', () => {
   it('ignores the hand-set health, coverage and momentum and recomputes them', () => {
     const neuro = docs.topics.find((t) => t.id === 't-neuro')!.doc;
     // Prototype said at-risk / 0.42 / -8. Recomputed: 2 of 5 open gaps covered by active work.
-    expect(neuro.stats).toEqual({ questions: 4, gaps: 5, openGaps: 5, coverage: 0.4, work: 4, papers: 2, fte: 2 });
+    expect(neuro.stats).toMatchObject({ questions: 4, gaps: 5, openGaps: 5, coverage: 0.4, work: 4, papers: 2, fte: 2 });
+    expect(neuro.stats.grades).toEqual({ outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 2 });
     // 40 − 15 (g2 critical) − 8 (g3 high) − 10 (w2 blocked) − 4×5 overdue → clamped to 0.
     expect(neuro.healthScore).toBe(0);
     expect(neuro.health).toBe('at-risk');

@@ -28,6 +28,14 @@ export class PersonRefDto {
   initials!: string;
 }
 
+export class GradeCountsDto implements M.GradeCounts {
+  outstanding!: number;
+  excellent!: number;
+  satisfactory!: number;
+  dissatisfactory!: number;
+  ungraded!: number;
+}
+
 export class TopicStatsDto implements M.TopicStats {
   questions!: number;
   gaps!: number;
@@ -37,6 +45,8 @@ export class TopicStatsDto implements M.TopicStats {
   work!: number;
   papers!: number;
   fte!: number;
+  /** Paper grade roll-up. */
+  grades!: GradeCountsDto;
 }
 
 export class TopicBudgetDto {
