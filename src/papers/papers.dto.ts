@@ -60,9 +60,17 @@ export class FirstCitationDto {
   monthsAfterPublication!: number | null;
 }
 
+export class CenterRefDto {
+  id!: string;
+  name!: string;
+  code!: string | null;
+}
+
 export class PaperListItemDto extends PaperDto {
   topic!: TopicRefDto;
   authors!: PersonRefDto[];
+  /** The centers the authors' teams are in, each once, in author order; authors outside a team add none. */
+  authorCenters!: CenterRefDto[];
   /** Lifetime totals. */
   totals!: MetricTotalsDto;
   /** Time to first citation, from monthly metrics. */

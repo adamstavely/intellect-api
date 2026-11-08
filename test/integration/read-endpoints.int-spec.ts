@@ -167,6 +167,7 @@ describe('read endpoints', () => {
       expect(body[0]).toMatchObject({
         topic: { id: 't-neuro', name: 'Neuromorphic Computing' },
         authors: [{ id: 'mo' }, { id: 'ec' }, { id: 'jt' }],
+        authorCenters: [{ id: 'c-cci', code: 'CCI', name: 'Center for Cyber Intelligence' }],
         totals: { downloads: 18420, views: 46100, citations: 73, altmetric: 284, mentions: { social: 128 } },
       });
       expect(await get('/papers?grade=ungraded')).toHaveLength(3);
