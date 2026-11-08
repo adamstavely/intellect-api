@@ -20,7 +20,7 @@ describe('es:seed', () => {
   it('loads every index', async () => {
     const { counts, warnings } = await seed(es, AS_OF);
     expect(warnings).toEqual([]);
-    expect(counts).toMatchObject({ topics: 12, people: 11, 'org-units': 9, 'topic-health-history': 144 });
+    expect(counts).toMatchObject({ topics: 12, people: 11, 'org-units': 17, 'topic-health-history': 144 });
     for (const [index, n] of Object.entries(counts)) {
       expect((await es.count({ index })).count).toBe(n);
     }
