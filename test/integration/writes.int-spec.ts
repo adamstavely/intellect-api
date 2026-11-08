@@ -75,7 +75,7 @@ describe('writes, brief and reconcile', () => {
         id: 't-neuromorphic-sensing',
         priorityLabel: 'Core',
         teamId: 'team-cognitive-systems',
-        centerId: 'sl-intel',
+        centerId: 'c-cci',
         tags: ['edge'],
         budget: { allocated: 0.4, spent: 0, fy: 'FY27' },
         plannedFte: 2.5,
@@ -104,7 +104,7 @@ describe('writes, brief and reconcile', () => {
       await create('hv', { ...base, bin: 7 }).expect(400);
       await create('hv', { ...base, name: '' }).expect(400);
       await create('hv', { ...base, health: 'healthy' }).expect(400);
-      await create('hv', { ...base, teamId: 'sl-intel' }).expect(400);
+      await create('hv', { ...base, teamId: 'c-cci' }).expect(400);
       await create('hv', { ...base, leadId: 'nobody' }).expect(400);
       await create('hv', { ...base, plannedFte: 25 }).expect(400);
       await create('hv', { ...base, plannedFte: 1.25 }).expect(400);
@@ -118,7 +118,7 @@ describe('writes, brief and reconcile', () => {
       expect(b.period).toEqual({ label: 'FY26-Q2', from: '2026-01-01', to: '2026-03-31' });
       expect(b.preparedFor).toMatchObject({ id: 'hv' });
       expect(b.executiveSummary.length).toBeGreaterThanOrEqual(3);
-      expect(b.centers).toHaveLength(3);
+      expect(b.centers).toHaveLength(11);
       expect(b.exposure.map((g: { severity: string }) => g.severity)).toEqual(expect.arrayContaining(['critical', 'high']));
       expect(b.investment.map((i: { bin: number }) => i.bin)).toEqual([1, 2, 3, 4]);
       expect(b.impact.length).toBeGreaterThan(0);
@@ -130,7 +130,7 @@ describe('writes, brief and reconcile', () => {
     it('is scoped for a PI', async () => {
       const res = await http().get('/brief').set('X-Intellect-User', 'sa').expect(200);
       expect(res.body.atAGlance.topics).toBe(2);
-      expect(res.body.centers.map((c: { id: string }) => c.id)).toEqual(['sl-energy']);
+      expect(res.body.centers.map((c: { id: string }) => c.id)).toEqual(['c-nemc']);
       expect(res.body.exposure.every((g: { topicId: string }) => ['t-carbon', 't-grid'].includes(g.topicId))).toBe(true);
     });
   });

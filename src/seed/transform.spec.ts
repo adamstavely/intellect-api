@@ -59,11 +59,11 @@ describe('seed transform', () => {
     expect(neuro.map((h) => h.healthScore)).toEqual(docs.topics.find((t) => t.id === 't-neuro')!.doc.trend);
   });
 
-  it('derives org units: three centers and their teams', () => {
+  it('derives org units: the eleven mission centers and their teams', () => {
     const units = docs['org-units'].map((u) => u.doc);
-    expect(units.filter((u) => u.kind === 'center')).toHaveLength(3);
-    expect(units.find((u) => u.id === 'team-cognitive-systems')).toMatchObject({ parentId: 'sl-intel', leadId: 'mo' });
-    expect(docs.topics.find((t) => t.id === 't-grid')!.doc).toMatchObject({ teamId: 'team-energy-and-materials', centerId: 'sl-energy' });
+    expect(units.filter((u) => u.kind === 'center')).toHaveLength(11);
+    expect(units.find((u) => u.id === 'team-cognitive-systems')).toMatchObject({ parentId: 'c-cci', leadId: 'mo' });
+    expect(docs.topics.find((t) => t.id === 't-grid')!.doc).toMatchObject({ teamId: 'team-energy-and-materials', centerId: 'c-nemc' });
   });
 
   it('writes paper metrics that sum back to the prototype totals', () => {

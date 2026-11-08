@@ -267,16 +267,22 @@
 
   // ---- Sub-labs (Centers): group the institute's teams under directorates ----
   // Each center rolls up several teams; each team rolls up its topics.
+  // The mission centers. The sample teams sit under three of them, two each; the rest have no teams yet.
   const subLabs = [
-    { id:"sl-intel", name:"Center for Intelligent Systems", short:"Intelligent Systems", code:"CIS",
-      lead:"mo", teams:["Cognitive Systems","Autonomy"],
-      focus:"Learning, perception and autonomy — from low-power hardware to multi-agent control." },
-    { id:"sl-energy", name:"Center for Energy & Climate", short:"Energy & Climate", code:"CEC",
-      lead:"sa", teams:["Energy & Materials","Climate Systems"],
-      focus:"Decarbonization materials, grid-scale storage and climate-risk modeling." },
-    { id:"sl-quantum", name:"Center for Quantum & Life Sciences", short:"Quantum & Life", code:"CQL",
-      lead:"pr", teams:["Quantum & Sensing","Synthetic Biology"],
-      focus:"Quantum sensing, privacy-preserving computation and engineered biology." },
+    { id:"c-afmc", name:"Africa Mission Center", short:"Africa", code:"AFMC", teams:[] },
+    { id:"c-acmc", name:"Americas and Counternarcotics Mission Center", short:"Americas & Counternarcotics", code:"ACMC", teams:[] },
+    { id:"c-cci", name:"Center for Cyber Intelligence", short:"Cyber Intelligence", code:"CCI",
+      lead:"mo", teams:["Cognitive Systems","Autonomy"], focus:"Learning, perception and autonomy — from low-power hardware to multi-agent control." },
+    { id:"c-cmc", name:"China Mission Center", short:"China", code:"CMC", teams:[] },
+    { id:"c-cimc", name:"Counterintelligence Mission Center", short:"Counterintelligence", code:"CIMC", teams:[] },
+    { id:"c-ctmc", name:"Counterterrorism Mission Center", short:"Counterterrorism", code:"CTMC", teams:[] },
+    { id:"c-eapmc", name:"East Asia & Pacific Mission Center", short:"East Asia & Pacific", code:"EAPMC", teams:[] },
+    { id:"c-eemc", name:"Europe & Eurasia Mission Center", short:"Europe & Eurasia", code:"EEMC", teams:[] },
+    { id:"c-nemc", name:"Near East Mission Center", short:"Near East", code:"NEMC",
+      lead:"sa", teams:["Energy & Materials","Climate Systems"], focus:"Decarbonization materials, grid-scale storage and climate-risk modeling." },
+    { id:"c-scamc", name:"South & Central Asia Mission Center", short:"South & Central Asia", code:"SCAMC", teams:[] },
+    { id:"c-wcpmc", name:"Weapons & Counterproliferation Mission Center", short:"Weapons & Counterproliferation", code:"WCPMC",
+      lead:"pr", teams:["Quantum & Sensing","Synthetic Biology"], focus:"Quantum sensing, privacy-preserving computation and engineered biology." },
   ];
 
   window.DATA = { people, topics, questions, gaps, work, papers, lab, subLabs };
