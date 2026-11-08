@@ -166,6 +166,11 @@ describe('read endpoints', () => {
   });
 
   describe('GET /gaps', () => {
+    it('returns every gap with a limit up to 10,000, and rejects more', async () => {
+      expect(((await get('/gaps?limit=10000')) as unknown as unknown[]).length).toBeGreaterThan(0);
+      await get('/gaps?limit=10001', 'hv', 400);
+    });
+
     it('lists uncovered open gaps by severity, then topic health', async () => {
       const body = (await get('/gaps?attention=true&limit=5')) as unknown as Body[];
       expect(ids(body as never)).toEqual(['g10', 'g2', 'g9', 'g3', 'g8']);

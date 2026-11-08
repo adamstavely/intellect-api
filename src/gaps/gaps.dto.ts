@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { MAX_DOCS } from '../common/es';
 import { GapDto, PersonRefDto } from '../model/model.dto';
 
 export class GapsQueryDto {
@@ -9,12 +10,12 @@ export class GapsQueryDto {
   @IsBoolean()
   attention?: boolean;
 
-  /** 1–100, default 20. */
+  /** 1–10,000 (every gap the search returns), default 20. A full review asks for the most. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(MAX_DOCS)
   limit?: number;
 
   @IsOptional()
