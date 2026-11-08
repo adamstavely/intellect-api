@@ -93,6 +93,7 @@ export const INDICES: IndexDefinition[] = [
       }),
       momentum: integer,
       trend: integer,
+      idempotencyKey: keyword,
     }),
   },
   {
@@ -190,6 +191,8 @@ export const INDICES: IndexDefinition[] = [
     mappings: strict({
       id: keyword,
       at: timestamp,
+      // When it was written (each attempt restamps it); audit forwarding follows this.
+      indexedAt: timestamp,
       actor: object({ id: keyword, name: keyword, role: keyword, authenticated: { type: 'boolean' } }),
       action: keyword,
       method: keyword,
@@ -210,7 +213,8 @@ export const INDICES: IndexDefinition[] = [
     // Where audit forwarding has got to: the sort values of the last event the webhook accepted.
     alias: 'audit-cursor',
     version: 1,
-    // `sort` is [epoch ms, id] exactly as Elasticsearch returned it, kept unindexed so it round-trips into search_after.
+    // `sort` is the last event's sort values exactly as Elasticsearch returned them, kept unindexed so they round-trip
+    // into search_after: [indexedAt ms, at ms, id] (doc `webhook-v2`), or [at ms, id] in the pre-indexedAt `webhook` doc.
     mappings: strict({ sort: { type: 'object', enabled: false }, updatedAt: timestamp }),
   },
   {

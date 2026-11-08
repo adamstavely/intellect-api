@@ -17,6 +17,8 @@ export interface AuditConfig {
   batchSize: number;
   /** How long to wait for the webhook, in ms. */
   timeoutMs: number;
+  /** How old (by indexedAt) an event must be before it's forwarded, in ms: above write latency plus clock skew. */
+  settleMs: number;
 }
 
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/;
@@ -45,6 +47,7 @@ export function auditOptions(env: NodeJS.ProcessEnv = process.env): AuditConfig 
     intervalMs: int(env.AUDIT_FORWARD_INTERVAL_MS, 5000, 100, 3_600_000),
     batchSize: int(env.AUDIT_FORWARD_BATCH, 200, 1, 5000),
     timeoutMs: int(env.AUDIT_WEBHOOK_TIMEOUT_MS, 10_000, 100, 120_000),
+    settleMs: int(env.AUDIT_FORWARD_SETTLE_MS, 30_000, 0, 3_600_000),
   };
 }
 

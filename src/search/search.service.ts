@@ -31,11 +31,11 @@ export class SearchService {
     const { responses } = await this.es.msearch({
       searches: [
         { index: ALIASES.topics },
-        body(match(['name^3', 'summary'], [{ term: { tags: { value: text.toLowerCase(), boost: 2 } } }]), ScopeService.toFilter(scope, 'id')),
+        body(match(['name^3', 'summary'], [{ term: { tags: { value: text, case_insensitive: true, boost: 2 } } }]), ScopeService.toFilter(scope, 'id')),
         { index: ALIASES.gaps },
         body(match(['text']), ScopeService.toFilter(scope, 'topicId')),
         { index: ALIASES.papers },
-        body(match(['title^2'], [{ term: { venue: { value: text } } }]), ScopeService.toFilter(scope, 'topicId')),
+        body(match(['title^2'], [{ term: { venue: { value: text, case_insensitive: true } } }]), ScopeService.toFilter(scope, 'topicId')),
         { index: ALIASES.people },
         body(match(['name']), ScopeService.peopleFilter(scope, user)),
       ],

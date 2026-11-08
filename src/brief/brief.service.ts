@@ -37,7 +37,8 @@ export class BriefService {
     const [atAGlance, org, attention, impact, people, topicsRes, workRes] = await Promise.all([
       this.portfolio.summary(user, { period: q.period }),
       this.org.tree(user),
-      this.gaps.list(user, { attention: true, limit: 100 }),
+      // Every gap needing attention: the exposure count has to be the whole count.
+      this.gaps.list(user, { attention: true, limit: MAX_DOCS }),
       this.papers.top(user, { period: q.period, limit: 3 }),
       this.people.list(user),
       this.es.search<Topic>({ index: ALIASES.topics, size: MAX_DOCS, query: { bool: { filter: [ScopeService.toFilter(topicScope, 'id')] } } }),

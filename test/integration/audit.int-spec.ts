@@ -48,6 +48,8 @@ describe('audit trail', () => {
     process.env.AUDIT_WEBHOOK_SECRET = 's3cret';
     // Long enough that the timer never fires mid-test: the tests drive forward() themselves.
     process.env.AUDIT_FORWARD_INTERVAL_MS = '3600000';
+    // Send events as soon as they're stored; the tests refresh before forwarding.
+    process.env.AUDIT_FORWARD_SETTLE_MS = '0';
 
     es = testClient();
     await resetCluster(es);
@@ -65,6 +67,7 @@ describe('audit trail', () => {
     delete process.env.AUDIT_WEBHOOK_URL;
     delete process.env.AUDIT_WEBHOOK_SECRET;
     delete process.env.AUDIT_FORWARD_INTERVAL_MS;
+    delete process.env.AUDIT_FORWARD_SETTLE_MS;
   });
 
   it('records every request: reads, refused writes and unknown users, with the request id', async () => {
@@ -114,5 +117,32 @@ describe('audit trail', () => {
     deliveries.length = 0;
     expect(await forwarder.forward()).toBe(1);
     expect((JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events[0]).toMatchObject({ action: 'GET /me' });
+  });
+
+  it('still forwards an event stored after the cursor passed its request time', async () => {
+    const forwarder = app.get(AuditForwarder);
+    await forwarder.forward();
+    // Finished an hour ago, but only written now (a retried write, or a replica slow to flush).
+    const late = { ...(await audited())[0], id: 'late-1', at: new Date(Date.now() - 3_600_000).toISOString(), indexedAt: new Date().toISOString() };
+    await es.index({ index: 'audit', id: late.id, document: late, refresh: true });
+    deliveries.length = 0;
+    expect(await forwarder.forward()).toBe(1);
+    expect((JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events[0].id).toBe('late-1');
+  });
+
+  it('carries delivery over from the cursor kept before indexedAt', async () => {
+    const forwarder = app.get(AuditForwarder);
+    // Back to how it was: events without indexedAt, and the old cursor after the second of them by `at`.
+    await es.updateByQuery({ index: 'audit', script: { source: "ctx._source.remove('indexedAt')" }, query: { match_all: {} }, refresh: true });
+    await es.delete({ index: 'audit-cursor', id: 'webhook-v2', refresh: true });
+    const old = await es.search<AuditEvent>({ index: 'audit', size: 2, sort: [{ at: 'asc' }, { id: 'asc' }] });
+    await es.index({ index: 'audit-cursor', id: 'webhook', document: { sort: old.hits.hits[1].sort, updatedAt: new Date().toISOString() }, refresh: true });
+    const total = (await es.count({ index: 'audit' })).count;
+
+    deliveries.length = 0;
+    expect(await forwarder.forward()).toBe(total - 2);
+    const sent = (JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events;
+    expect(sent.map((e) => e.id)).not.toContain(old.hits.hits[0]._source!.id);
+    expect(sent.every((e) => e.indexedAt === e.at)).toBe(true);
   });
 });

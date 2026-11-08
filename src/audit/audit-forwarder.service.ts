@@ -7,17 +7,26 @@ import { ALIASES } from '../elastic/indices';
 import type { AuditConfig } from '../config/configuration';
 import { AuditEvent, sign } from './audit-event';
 
-const CURSOR_ID = 'webhook';
+/** The cursor over [indexedAt, at, id]. */
+const CURSOR_ID = 'webhook-v2';
+/** The cursor from before indexedAt, over [at, id]; read once, to carry delivery over. */
+const LEGACY_CURSOR_ID = 'webhook';
 const MAX_BACKOFF_MS = 5 * 60_000;
 
-type Cursor = { sort: [number, string] | null; updatedAt: string };
+type Cursor = { sort: (number | string)[] | null; updatedAt: string };
 
 /**
- * Sends audit events on to an external HTTPS webhook, in order, in batches. Delivery is driven by a cursor stored in
- * Elasticsearch: a batch is the events after the cursor; the cursor moves only when the webhook answers 2xx. So a
- * webhook outage, or a restart, loses nothing – delivery picks up where it left off. It's at-least-once: a batch can
- * be sent twice (a timeout after the receiver accepted it, or two replicas racing – the cursor update is guarded, so
- * only one advances), and receivers should de-duplicate on each event's `id`.
+ * Sends audit events on to an external HTTPS webhook, in order of when they were stored, in batches. Delivery is
+ * driven by a cursor stored in Elasticsearch: a batch is the events after the cursor; the cursor moves only when the
+ * webhook answers 2xx. So a webhook outage, or a restart, loses nothing – delivery picks up where it left off.
+ *
+ * The order is `indexedAt` (stamped on each write attempt), not `at` (when the request finished), so an event written
+ * late – after a retry, or by a replica whose queue was slow to flush – still lands after the cursor. Events are only
+ * sent once they're `settleMs` old, which covers the gap between stamping and becoming searchable, and clock skew
+ * between replicas; keep it above both.
+ *
+ * It's at-least-once: a batch can be sent twice (a timeout after the receiver accepted it, or two replicas racing –
+ * the cursor update is guarded, so only one advances), and receivers should de-duplicate on each event's `id`.
  *
  * Each POST carries `{ events: [...] }` with headers:
  *   X-Intellect-Delivery   a unique id for this attempt
@@ -78,12 +87,19 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
 
   /** Sends the next batch after the cursor and advances it. Returns how many events went. */
   async forward(): Promise<number> {
-    const cursorDoc = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: CURSOR_ID }, { ignore: [404] });
+    let cursorDoc = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: CURSOR_ID }, { ignore: [404] });
+    if (!cursorDoc.found) {
+      await this.#upgrade();
+      cursorDoc = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: CURSOR_ID }, { ignore: [404] });
+    }
     const cursor = cursorDoc.found ? (cursorDoc._source?.sort ?? null) : null;
     const res = await this.es.search<AuditEvent>({
       index: ALIASES.audit,
       size: this.#config.batchSize,
-      sort: [{ at: 'asc' }, { id: 'asc' }],
+      // Elasticsearch's clock, so replicas agree on the cut-off; date math counts whole seconds.
+      query: { range: { indexedAt: { lte: `now-${Math.ceil(this.#config.settleMs / 1000)}s` } } },
+      // Events written together share indexedAt; within them, request order.
+      sort: [{ indexedAt: 'asc' }, { at: 'asc' }, { id: 'asc' }],
       ...(cursor ? { search_after: cursor } : {}),
     });
     const hits = res.hits.hits;
@@ -91,7 +107,7 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
 
     await this.#post(hits.map((h) => h._source!));
 
-    const last = hits[hits.length - 1].sort as [number, string];
+    const last = hits[hits.length - 1].sort as (number | string)[];
     const doc: Cursor = { sort: last, updatedAt: new Date().toISOString() };
     try {
       await this.es.index({
@@ -106,6 +122,29 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
       if (!(err instanceof errors.ResponseError && err.statusCode === 409)) throw err;
     }
     return hits.length;
+  }
+
+  /**
+   * First run on the indexedAt cursor. Events stored before indexedAt existed get indexedAt = at, so the old cursor
+   * [at, id] marks the same place as [at, at, id] over [indexedAt, at, id], and delivery carries on from it.
+   */
+  async #upgrade(): Promise<void> {
+    await this.es.updateByQuery({
+      index: ALIASES.audit,
+      query: { bool: { must_not: [{ exists: { field: 'indexedAt' } }] } },
+      script: { source: 'ctx._source.indexedAt = ctx._source.at', lang: 'painless' },
+      conflicts: 'proceed',
+      refresh: true,
+    });
+    const legacy = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: LEGACY_CURSOR_ID }, { ignore: [404] });
+    const old = legacy.found ? legacy._source?.sort : null;
+    const doc: Cursor = { sort: old ? [old[0], old[0], old[1]] : null, updatedAt: new Date().toISOString() };
+    try {
+      await this.es.index({ index: ALIASES.auditCursor, id: CURSOR_ID, document: doc, op_type: 'create', refresh: 'wait_for' });
+    } catch (err) {
+      // Another replica upgraded first.
+      if (!(err instanceof errors.ResponseError && err.statusCode === 409)) throw err;
+    }
   }
 
   async #post(events: AuditEvent[]): Promise<void> {

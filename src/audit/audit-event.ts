@@ -10,6 +10,11 @@ export interface AuditEvent {
   id: string;
   /** When the request finished, ISO 8601 with milliseconds. */
   at: string;
+  /**
+   * When this copy was written to Elasticsearch: stamped on each write attempt, so a retried event gets a later time.
+   * Forwarding follows this, not `at`, so an event written late is still sent. Absent until stored.
+   */
+  indexedAt?: string;
   actor: {
     /** The person the request ran as, or the id it claimed when auth refused it. */
     id: string | null;
@@ -38,14 +43,21 @@ export interface AuditEvent {
 }
 
 export const MAX_BODY_BYTES = 4096;
+/** Deeper than this, redaction stops and the value is replaced: a pathological body can't exhaust the stack. */
+export const MAX_DEPTH = 32;
+export const TOO_DEEP = '[too deep]';
 const SECRET_KEY = /pass(word)?|secret|token|api[-_]?key|authorization|cookie/i;
 const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Replaces the values of secret-looking keys with "[redacted]", at any depth. */
-export function redact(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redact);
+/**
+ * Replaces the values of secret-looking keys with "[redacted]", down to `MAX_DEPTH` levels; anything nested deeper
+ * becomes "[too deep]".
+ */
+export function redact(value: unknown, depth = 0): unknown {
+  if (value && typeof value === 'object' && depth >= MAX_DEPTH) return TOO_DEEP;
+  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
   if (value && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) ? '[redacted]' : redact(v)]));
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, SECRET_KEY.test(k) ? '[redacted]' : redact(v, depth + 1)]));
   }
   return value;
 }

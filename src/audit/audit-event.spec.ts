@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
 import type { Person } from '../model/types';
-import { MAX_BODY_BYTES, redact, sign, toAuditEvent } from './audit-event';
+import { MAX_BODY_BYTES, MAX_DEPTH, redact, sign, TOO_DEEP, toAuditEvent } from './audit-event';
 import { auditOptions } from '../config/configuration';
 
 const base = {
@@ -63,6 +63,21 @@ describe('audit events', () => {
     expect(big).toMatchObject({ body: null, bodyTruncated: true });
   });
 
+  it('stops redacting past MAX_DEPTH instead of overflowing the stack', () => {
+    let deep: unknown = { password: 'p' };
+    for (let i = 0; i < 100_000; i++) deep = { a: [deep] };
+    const e = toAuditEvent({ ...base, method: 'POST', body: deep });
+    expect(e.bodyTruncated).toBe(false);
+    let node: unknown = e.body;
+    let depth = 0;
+    while (node && typeof node === 'object') {
+      node = Array.isArray(node) ? (node as unknown[])[0] : (node as { a: unknown[] }).a;
+      depth++;
+    }
+    expect(node).toBe(TOO_DEEP);
+    expect(depth).toBe(MAX_DEPTH);
+  });
+
   it('signs "<timestamp>.<body>" with HMAC-SHA256', () => {
     const expected = createHmac('sha256', 's3cret').update('1700000000.{"events":[]}').digest('hex');
     expect(sign('s3cret', '1700000000', '{"events":[]}')).toBe(`sha256=${expected}`);
@@ -71,7 +86,7 @@ describe('audit events', () => {
 
 describe('audit config', () => {
   it('keeps events in Elasticsearch only without a webhook', () => {
-    expect(auditOptions({})).toEqual({ webhookUrl: undefined, webhookSecret: undefined, intervalMs: 5000, batchSize: 200, timeoutMs: 10_000 });
+    expect(auditOptions({})).toEqual({ webhookUrl: undefined, webhookSecret: undefined, intervalMs: 5000, batchSize: 200, timeoutMs: 10_000, settleMs: 30_000 });
   });
 
   it('takes https anywhere, http only on localhost', () => {

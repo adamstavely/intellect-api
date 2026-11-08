@@ -13,18 +13,24 @@ export function monthEnd(month: string): string {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 }
 
-/** Papers published by the end of each month: a running total. Dates are YYYY-MM-DD. */
-export function cumulativeByMonth(published: string[], months: string[]): number[] {
+/** The date a month is counted at: its last day, or `asOf` if that's sooner, so the current month stops at today. */
+const countedAt = (month: string, asOf: string) => {
+  const end = monthEnd(month);
+  return asOf < end ? asOf : end;
+};
+
+/** Papers published by the end of each month (or by `asOf`): a running total. Dates are YYYY-MM-DD. */
+export function cumulativeByMonth(published: string[], months: string[], asOf: string): number[] {
   return months.map((month) => {
-    const end = monthEnd(month);
+    const end = countedAt(month, asOf);
     return published.filter((d) => d <= end).length;
   });
 }
 
-/** People here at the end of each month: started by then, and not yet left. */
-export function headcountByMonth(people: { started: string; ended: string | null }[], months: string[]): number[] {
+/** People here at the end of each month (or on `asOf`): started by then, and not yet left. */
+export function headcountByMonth(people: { started: string; ended: string | null }[], months: string[], asOf: string): number[] {
   return months.map((month) => {
-    const end = monthEnd(month);
+    const end = countedAt(month, asOf);
     return people.filter((p) => p.started <= end && (p.ended === null || p.ended > end)).length;
   });
 }
