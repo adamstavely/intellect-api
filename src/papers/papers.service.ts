@@ -85,9 +85,25 @@ export class PapersService {
         sort: [{ published: 'desc' }, { id: 'asc' }],
       }),
     );
-    const items = await this.decorate(papers, await this.totals(papers.map((p) => p.id)));
+    const ids = papers.map((p) => p.id);
+    const items = await this.decorate(papers, await this.totals(ids));
     if (q.sort === 'reads') items.sort((a, b) => b.totals.views - a.totals.views || a.id.localeCompare(b.id));
-    return items;
+    if (!q.period) return items;
+    const inPeriod = await this.periodTotals(ids, parsePeriod(q.period, this.clock.today()));
+    return items.map((p) => ({ ...p, periodTotals: inPeriod.get(p.id) ?? EMPTY_TOTALS }));
+  }
+
+  /** Each paper's metrics summed over the period's months. */
+  private async periodTotals(paperIds: string[], period: { fromMonth: string; toMonth: string }): Promise<Map<string, MetricTotalsDto>> {
+    if (!paperIds.length) return new Map();
+    const res = await this.es.search({
+      index: ALIASES.paperMetrics,
+      size: 0,
+      query: { bool: { filter: [{ terms: { paperId: paperIds } }, { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },
+      aggs: { papers: { terms: { field: 'paperId', size: paperIds.length }, aggs: TOTALS_AGGS } },
+    });
+    const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
+    return new Map(buckets.map((b) => [b.key, toTotals(b)]));
   }
 
   /** Most-read papers (by views) within the period: the dashboard's "Impact pulse". */

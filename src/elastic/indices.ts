@@ -44,6 +44,8 @@ export const INDICES: IndexDefinition[] = [
       team: keyword,
       allocations: nested({ topicId: keyword, fte: float }),
       capacity: float,
+      started: day,
+      ended: day,
     }),
   },
   {

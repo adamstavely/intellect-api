@@ -42,6 +42,33 @@ describe('read endpoints', () => {
     await es.close();
   });
 
+  describe('GET /portfolio/history', () => {
+    it('counts papers to date and headcount by month, with a forecast', async () => {
+      const body = await get('/portfolio/history');
+      expect(body.months).toHaveLength(24);
+      expect(body.forecastMonths).toHaveLength(6);
+      // Everyone in the seed is still here; three papers in all
+      expect(body.people).toMatchObject({ current: 11 });
+      expect(body.papers).toMatchObject({ current: 3 });
+      expect(body.people.actual).toHaveLength(24);
+      expect(body.papers.forecast).toHaveLength(6);
+      // A running total never falls
+      expect(body.papers.forecast.every((p: Body) => p.low >= 3)).toBe(true);
+    });
+
+    it('scopes to the PI', async () => {
+      const body = await get('/portfolio/history?months=12&horizon=3', 'mo');
+      expect(body.months).toHaveLength(12);
+      expect(body.forecastMonths).toHaveLength(3);
+      expect(body.papers.current).toBe(2);
+      expect(body.people.current).toBeLessThan(11);
+    });
+
+    it('rejects out-of-range months', async () => {
+      await get('/portfolio/history?months=2', 'hv', 400);
+    });
+  });
+
   describe('GET /portfolio/summary', () => {
     it('aggregates the whole portfolio for the Chief', async () => {
       const { docs } = await buildSeed(TODAY);
@@ -172,6 +199,14 @@ describe('read endpoints', () => {
       });
       expect(await get('/papers?grade=ungraded')).toHaveLength(3);
       expect(await get('/papers?grade=outstanding')).toHaveLength(0);
+    });
+
+    it('adds totals within a period when asked', async () => {
+      const body = (await get('/papers?period=FY26')) as unknown as Body[];
+      expect(body.every((p) => p.periodTotals && typeof p.periodTotals.views === 'number')).toBe(true);
+      // Within a period is never more than lifetime
+      expect(body.every((p) => p.periodTotals.views <= p.totals.views)).toBe(true);
+      expect(((await get('/papers')) as unknown as Body[]).every((p) => p.periodTotals === undefined)).toBe(true);
     });
 
     it('ranks the top papers by views in the period', async () => {

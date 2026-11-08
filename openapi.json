@@ -132,6 +132,56 @@
         ]
       }
     },
+    "/portfolio/history": {
+      "get": {
+        "operationId": "PortfolioController_history",
+        "parameters": [
+          {
+            "name": "months",
+            "required": false,
+            "in": "query",
+            "description": "Months of history, ending this month: 6–60, default 24.",
+            "schema": {
+              "minimum": 6,
+              "maximum": 60,
+              "type": "number"
+            }
+          },
+          {
+            "name": "horizon",
+            "required": false,
+            "in": "query",
+            "description": "Months to forecast after this one: 1–24, default 6.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 24,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioHistoryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "intellect-user": []
+          }
+        ],
+        "summary": "Papers to date and headcount by month, with a six-month forecast: the Summary's Papers and People cards.",
+        "tags": [
+          "portfolio"
+        ]
+      }
+    },
     "/topics": {
       "get": {
         "operationId": "TopicsController_list",
@@ -439,6 +489,15 @@
                 "published",
                 "reads"
               ]
+            }
+          },
+          {
+            "name": "period",
+            "required": false,
+            "in": "query",
+            "description": "Adds each paper's `periodTotals` for this period: `ytd`, `FY26`, `FY26-Q2` or a month, `2026-11`.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1041,6 +1100,15 @@
           },
           "capacity": {
             "type": "number"
+          },
+          "started": {
+            "type": "string",
+            "description": "When they joined, YYYY-MM-DD."
+          },
+          "ended": {
+            "type": "string",
+            "nullable": true,
+            "description": "When they left, YYYY-MM-DD; null while they're here."
           }
         },
         "required": [
@@ -1052,7 +1120,9 @@
           "title",
           "team",
           "allocations",
-          "capacity"
+          "capacity",
+          "started",
+          "ended"
         ]
       },
       "PersonSummaryDto": {
@@ -1101,6 +1171,15 @@
           },
           "capacity": {
             "type": "number"
+          },
+          "started": {
+            "type": "string",
+            "description": "When they joined, YYYY-MM-DD."
+          },
+          "ended": {
+            "type": "string",
+            "nullable": true,
+            "description": "When they left, YYYY-MM-DD; null while they're here."
           }
         },
         "required": [
@@ -1113,7 +1192,9 @@
           "title",
           "team",
           "allocations",
-          "capacity"
+          "capacity",
+          "started",
+          "ended"
         ]
       },
       "TopicRefDto": {
@@ -1193,6 +1274,15 @@
           "capacity": {
             "type": "number"
           },
+          "started": {
+            "type": "string",
+            "description": "When they joined, YYYY-MM-DD."
+          },
+          "ended": {
+            "type": "string",
+            "nullable": true,
+            "description": "When they left, YYYY-MM-DD; null while they're here."
+          },
           "topics": {
             "description": "Allocations with topic names; only topics in the caller's scope are listed.",
             "type": "array",
@@ -1212,6 +1302,8 @@
           "team",
           "allocations",
           "capacity",
+          "started",
+          "ended",
           "topics"
         ]
       },
@@ -1414,6 +1506,95 @@
           "readTrend",
           "budget",
           "fte"
+        ]
+      },
+      "ForecastPointDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "low": {
+            "type": "number",
+            "description": "The low and high ends of an 80% range around `value`."
+          },
+          "high": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "value",
+          "low",
+          "high"
+        ]
+      },
+      "HistorySeriesDto": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "description": "The value now: the last of `actual`."
+          },
+          "actual": {
+            "description": "One value per month in `months`.",
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "forecast": {
+            "description": "One point per month in `forecastMonths`: a straight-line trend through the last twelve months.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForecastPointDto"
+            }
+          }
+        },
+        "required": [
+          "current",
+          "actual",
+          "forecast"
+        ]
+      },
+      "PortfolioHistoryDto": {
+        "type": "object",
+        "properties": {
+          "months": {
+            "description": "The history's months, YYYY-MM, oldest first, ending this month.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forecastMonths": {
+            "description": "The forecast's months, after `months`.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "papers": {
+            "description": "Papers published to date, in the caller's scope: a running total.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HistorySeriesDto"
+              }
+            ]
+          },
+          "people": {
+            "description": "People here at each month's end, in the caller's scope.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HistorySeriesDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "months",
+          "forecastMonths",
+          "papers",
+          "people"
         ]
       },
       "PersonRefDto": {
@@ -2685,6 +2866,14 @@
                 "$ref": "#/components/schemas/FirstCitationDto"
               }
             ]
+          },
+          "periodTotals": {
+            "description": "Views, citations and the rest within the requested `period`; present only when one was asked for.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
+              }
+            ]
           }
         },
         "required": [
@@ -2822,7 +3011,7 @@
             ]
           },
           "periodTotals": {
-            "description": "Totals within the requested period.",
+            "description": "Views, citations and the rest within the requested `period`; present only when one was asked for.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/MetricTotalsDto"
@@ -2850,8 +3039,7 @@
           "authors",
           "authorCenters",
           "totals",
-          "firstCitation",
-          "periodTotals"
+          "firstCitation"
         ]
       },
       "FirstCitationSummaryDto": {
@@ -3116,6 +3304,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/FirstCitationDto"
+              }
+            ]
+          },
+          "periodTotals": {
+            "description": "Views, citations and the rest within the requested `period`; present only when one was asked for.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetricTotalsDto"
               }
             ]
           },

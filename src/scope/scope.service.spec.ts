@@ -11,6 +11,8 @@ const person = (over: Partial<Person>): Person => ({
   team: null,
   allocations: [],
   capacity: 1,
+  started: '2024-01-01',
+  ended: null,
   ...over,
 });
 

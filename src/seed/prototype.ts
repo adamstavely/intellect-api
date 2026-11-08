@@ -15,6 +15,10 @@ export interface ProtoPerson {
   team: string;
   alloc?: [string, number][];
   cap?: number;
+  /** Joined, YYYY-MM-DD */
+  start: string;
+  /** Left, YYYY-MM-DD; absent while they're here */
+  end?: string;
 }
 
 export interface ProtoTopic {

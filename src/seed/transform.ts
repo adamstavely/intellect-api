@@ -128,6 +128,8 @@ export async function transformPrototype(
       team: NON_TEAMS.includes(p.team) ? null : teamId(p.team),
       allocations: (p.alloc ?? []).map(([topicId, fte]) => ({ topicId, fte })),
       capacity: p.cap ?? 1,
+      started: p.start,
+      ended: p.end ?? null,
     };
   });
 
