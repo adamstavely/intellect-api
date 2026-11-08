@@ -244,6 +244,7 @@ export async function transformPrototype(
       summary: t.summary,
       bin: t.bin,
       priorityLabel: t.priority,
+      priorityType: t.type,
       healthScore: score,
       health: healthBand(score),
       leadId: t.lead,

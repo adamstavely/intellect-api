@@ -75,6 +75,7 @@ describe('writes, brief and reconcile', () => {
       expect(res.body).toMatchObject({
         id: 't-neuromorphic-sensing',
         priorityLabel: 'Core',
+        priorityType: 'internal',
         teamId: 'team-cognitive-systems',
         centerId: 'c-cci',
         tags: ['edge'],
@@ -94,6 +95,9 @@ describe('writes, brief and reconcile', () => {
       const res = await create('hv', base).expect(201);
       expect(res.body.id).toBe('t-neuromorphic-sensing-2');
       expect(res.body.plannedFte).toBe(0);
+      const national = await create('hv', { ...base, priorityType: 'national' }).expect(201);
+      expect(national.body.priorityType).toBe('national');
+      await create('hv', { ...base, priorityType: 'regional' }).expect(400);
     });
 
     it('rejects a PI naming someone else as lead, and non-PI staff', async () => {

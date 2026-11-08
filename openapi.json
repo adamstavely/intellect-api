@@ -1787,6 +1787,15 @@
           "priorityLabel": {
             "type": "string"
           },
+          "priorityType": {
+            "type": "string",
+            "description": "Who the priority answers to: the lab itself, a national requirement, or an outside sponsor.",
+            "enum": [
+              "internal",
+              "external",
+              "national"
+            ]
+          },
           "healthScore": {
             "type": "number",
             "description": "0–100, computed."
@@ -1851,6 +1860,7 @@
           "summary",
           "bin",
           "priorityLabel",
+          "priorityType",
           "healthScore",
           "health",
           "leadId",
@@ -1906,6 +1916,15 @@
             "description": "Defaults from the bin: 1 Flagship, 2–3 Core, 4 Emerging.",
             "minLength": 1,
             "maxLength": 40
+          },
+          "priorityType": {
+            "type": "string",
+            "description": "Who the priority answers to; defaults to internal.",
+            "enum": [
+              "internal",
+              "national",
+              "external"
+            ]
           },
           "teamId": {
             "type": "string",
@@ -2031,6 +2050,15 @@
           "priorityLabel": {
             "type": "string"
           },
+          "priorityType": {
+            "description": "Who the priority answers to: the lab itself, a national requirement, or an outside sponsor.",
+            "enum": [
+              "internal",
+              "external",
+              "national"
+            ],
+            "type": "string"
+          },
           "healthScore": {
             "type": "number",
             "description": "0–100, computed."
@@ -2120,6 +2148,7 @@
           "summary",
           "bin",
           "priorityLabel",
+          "priorityType",
           "healthScore",
           "health",
           "leadId",

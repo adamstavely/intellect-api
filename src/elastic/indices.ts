@@ -71,6 +71,7 @@ export const INDICES: IndexDefinition[] = [
       summary: text,
       bin: { type: 'byte' },
       priorityLabel: keyword,
+      priorityType: keyword,
       healthScore: integer,
       health: keyword,
       leadId: keyword,

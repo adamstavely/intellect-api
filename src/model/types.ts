@@ -75,12 +75,17 @@ export interface GradeCounts {
   ungraded: number;
 }
 
+export type PriorityType = 'internal' | 'national' | 'external';
+export const PRIORITY_TYPES: readonly PriorityType[] = ['internal', 'national', 'external'];
+
 export interface Topic {
   id: string;
   name: string;
   summary: string;
   bin: 1 | 2 | 3 | 4;
   priorityLabel: string;
+  /** Who the priority answers to: the lab itself, a national requirement, or an outside sponsor */
+  priorityType: PriorityType;
   healthScore: number;
   health: HealthBand;
   leadId: string;
