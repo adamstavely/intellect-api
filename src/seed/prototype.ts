@@ -95,9 +95,10 @@ export interface ProtoSubLab {
   name: string;
   short: string;
   code: string;
-  lead: string;
+  /** Absent for a center with no teams yet. */
+  lead?: string;
   teams: string[];
-  focus: string;
+  focus?: string;
 }
 
 export interface PrototypeData {

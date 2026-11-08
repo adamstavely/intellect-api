@@ -103,7 +103,7 @@ describe('read endpoints', () => {
       expect(await get('/topics/t-carbon', 'sa')).toMatchObject({
         id: 't-carbon',
         team: { id: 'team-energy-and-materials', name: 'Energy & Materials' },
-        center: { id: 'sl-energy' },
+        center: { id: 'c-nemc' },
         stats: { papers: 1, collaboration: { unilateral: 0, joint: 1 } },
         people: [
           { person: { id: 'rb' }, fte: 0.6 },
@@ -197,8 +197,8 @@ describe('read endpoints', () => {
   describe('GET /org', () => {
     it('nests centers → teams → topics with roll-ups', async () => {
       const body = await get('/org');
-      expect(body.centers).toHaveLength(3);
-      const intel = (body.centers as Body[]).find((c) => c.id === 'sl-intel')!;
+      expect(body.centers).toHaveLength(11);
+      const intel = (body.centers as Body[]).find((c) => c.id === 'c-cci')!;
       expect(intel.teams.map((t: Body) => t.id).sort()).toEqual(['team-autonomy', 'team-cognitive-systems']);
       expect(intel.rollup).toMatchObject({ topics: 4, healthMix: { healthy: 3, atRisk: 1 }, papers: 2, collaboration: { unilateral: 1, joint: 1 } });
       expect(body.otherTeams).toEqual([]);
@@ -206,7 +206,7 @@ describe('read endpoints', () => {
 
     it('shows a PI only units with their topics', async () => {
       const body = await get('/org', 'mo');
-      expect(ids(body.centers as never)).toEqual(['sl-intel']);
+      expect(ids(body.centers as never)).toEqual(['c-cci']);
       expect(body.centers[0].teams).toHaveLength(1);
       expect(ids(body.centers[0].teams[0].topics as never)).toEqual(['t-neuro', 't-advml']);
     });
@@ -316,12 +316,12 @@ describe('read endpoints', () => {
 
     it('sums them per center and team, with work and mean health trend', async () => {
       const body = await get('/org');
-      const intel = (body.centers as Body[]).find((c) => c.id === 'sl-intel')!;
+      const intel = (body.centers as Body[]).find((c) => c.id === 'c-cci')!;
       expect(intel.rollup.recentPapers).toEqual({ lastMonth: 2, thisMonth: 1 });
       expect(intel.rollup.trend).toHaveLength(12);
       expect(typeof intel.rollup.momentum).toBe('number');
       expect(intel.rollup.work).toBeGreaterThan(0);
-      const energy = (body.centers as Body[]).find((c) => c.id === 'sl-energy')!;
+      const energy = (body.centers as Body[]).find((c) => c.id === 'c-nemc')!;
       expect(energy.rollup.recentPapers).toEqual({ lastMonth: 1, thisMonth: 0 });
     });
   });
