@@ -28,6 +28,8 @@ export interface OrgUnit {
   kind: 'center' | 'team';
   name: string;
   code: string | null;
+  /** A center's logo: a URL the app can show in place of its code. Null when it has none (and for teams). */
+  logo: string | null;
   parentId: string | null;
   leadId: string | null;
   focus: string | null;

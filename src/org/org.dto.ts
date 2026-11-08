@@ -63,6 +63,8 @@ export class OrgCenterDto {
   id!: string;
   name!: string;
   code!: string | null;
+  /** The center's logo, a URL; null shows its code instead. */
+  logo!: string | null;
   focus!: string | null;
   lead!: PersonRefDto | null;
   rollup!: OrgRollupDto;

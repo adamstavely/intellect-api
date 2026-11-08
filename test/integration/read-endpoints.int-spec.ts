@@ -200,6 +200,8 @@ describe('read endpoints', () => {
       expect(body.centers).toHaveLength(11);
       const intel = (body.centers as Body[]).find((c) => c.id === 'c-cci')!;
       expect(intel.teams.map((t: Body) => t.id).sort()).toEqual(['team-autonomy', 'team-cognitive-systems']);
+      // No center has a logo in the seed, so the app shows codes
+      expect((body.centers as Body[]).every((c) => c.logo === null)).toBe(true);
       expect(intel.rollup).toMatchObject({ topics: 4, healthMix: { healthy: 3, atRisk: 1 }, papers: 2, collaboration: { unilateral: 1, joint: 1 } });
       expect(body.otherTeams).toEqual([]);
     });

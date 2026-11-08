@@ -56,6 +56,7 @@ export class OrgService {
           id: u.id,
           name: u.name,
           code: u.code,
+          logo: u.logo ?? null,
           focus: u.focus,
           lead: lead(u.leadId),
           rollup: rollup(own, recent),

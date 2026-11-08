@@ -3514,6 +3514,11 @@
             "type": "string",
             "nullable": true
           },
+          "logo": {
+            "type": "string",
+            "nullable": true,
+            "description": "The center's logo, a URL; null shows its code instead."
+          },
           "focus": {
             "type": "string",
             "nullable": true
@@ -3541,6 +3546,7 @@
           "id",
           "name",
           "code",
+          "logo",
           "focus",
           "lead",
           "rollup",

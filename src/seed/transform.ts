@@ -91,7 +91,7 @@ export async function transformPrototype(
   const centerByTeam = new Map<string, string>();
   const orgUnits: OrgUnit[] = data.subLabs.map((c) => {
     c.teams.forEach((t) => centerByTeam.set(t, c.id));
-    return { id: c.id, kind: 'center', name: c.name, code: c.code, parentId: null, leadId: c.lead ?? null, focus: c.focus ?? null };
+    return { id: c.id, kind: 'center', name: c.name, code: c.code, logo: c.logo ?? null, parentId: null, leadId: c.lead ?? null, focus: c.focus ?? null };
   });
   const teamNames = new Set(
     [...Object.values(data.people).map((p) => p.team), ...data.topics.map((t) => t.team)].filter(
@@ -107,6 +107,7 @@ export async function transformPrototype(
       kind: 'team',
       name,
       code: null,
+      logo: null,
       parentId: centerByTeam.get(name) ?? null,
       leadId: pis[0]?.id ?? null,
       focus: null,
