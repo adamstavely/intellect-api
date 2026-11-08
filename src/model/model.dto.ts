@@ -81,6 +81,8 @@ export class TopicDto implements M.Topic {
   summary!: string;
   bin!: 1 | 2 | 3 | 4;
   priorityLabel!: string;
+  /** Who the priority answers to: the lab itself, a national requirement, or an outside sponsor. */
+  priorityType!: 'internal' | 'national' | 'external';
   /** 0–100, computed. */
   healthScore!: number;
   health!: 'healthy' | 'watch' | 'at-risk';

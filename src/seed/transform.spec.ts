@@ -20,6 +20,7 @@ describe('seed transform', () => {
     expect(docs.papers).toHaveLength(3);
     expect(docs.citations).toHaveLength(8);
     expect(warnings).toEqual([]);
+    expect(new Set(docs.topics.map((t) => t.doc.priorityType))).toEqual(new Set(['internal', 'national', 'external']));
   });
 
   it('gives every topic-owned record a topicId that exists', () => {

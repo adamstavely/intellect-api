@@ -13,6 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { PRIORITY_TYPES, type PriorityType } from '../model/types';
 import { CitationDto, GapDto, PaperDto, PersonRefDto, QuestionDto, RecentPapersDto, TopicDto, WorkDto } from '../model/model.dto';
 
 export const TOPIC_SORTS = ['risk', 'name', 'health', 'momentum', 'bin'] as const;
@@ -122,6 +123,11 @@ export class CreateTopicDto {
   @IsString()
   @Length(1, 40)
   priorityLabel?: string;
+
+  /** Who the priority answers to; defaults to internal. */
+  @IsOptional()
+  @IsIn(PRIORITY_TYPES)
+  priorityType?: PriorityType;
 
   /** Team org-unit id; the center comes from the team. */
   @IsString()

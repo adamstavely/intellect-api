@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
+import type { PriorityType } from '../model/types';
 
 /**
  * Shapes of the design prototype's `data.js` (seed/data.js, extracted from
@@ -28,6 +29,7 @@ export interface ProtoTopic {
   lead: string;
   team: string;
   priority: string;
+  type: PriorityType;
   summary: string;
   tags: string[];
   sponsors: string[];

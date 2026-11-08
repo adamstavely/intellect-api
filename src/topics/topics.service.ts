@@ -23,8 +23,11 @@ const SORTS: Record<TopicSort, estypes.SortCombinations[]> = {
 
 const personRef = (p: Pick<Person, 'id' | 'name' | 'initials'>) => ({ id: p.id, name: p.name, initials: p.initials });
 
-/** A stored topic as the API returns it: without the creating request's idempotency key. */
-const shown = ({ idempotencyKey: _key, ...t }: Topic): Topic => t;
+/**
+ * A stored topic as the API returns it: without the creating request's idempotency key. One stored before priority
+ * types reads as internal, the default for a new one.
+ */
+const shown = ({ idempotencyKey: _key, ...t }: Topic): Topic => ({ ...t, priorityType: t.priorityType ?? 'internal' });
 
 /** The i-th opening question's id: fixed by the topic, so writing the questions again doesn't duplicate them. */
 const questionId = (topicId: string, i: number) => `q-${createHash('sha256').update(`${topicId}:${i}`).digest('hex').slice(0, 8)}`;
@@ -79,6 +82,7 @@ export class TopicsService {
       summary: body.summary?.trim() ?? '',
       bin: body.bin as Topic['bin'],
       priorityLabel: body.priorityLabel?.trim() || PRIORITY_LABEL[body.bin],
+      priorityType: body.priorityType ?? 'internal',
       healthScore: 100,
       health: 'healthy',
       leadId: body.leadId,
