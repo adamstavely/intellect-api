@@ -4,10 +4,12 @@ import { Clock } from '../common/clock';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import type { Person } from '../model/types';
+import { MAX_DOCS, sources } from '../common/es';
+import type { Paper, Person } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { trailingMonths } from '../topic-health/topic-health';
-import type { PortfolioQueryDto, PortfolioSummaryDto } from './portfolio.dto';
+import { cumulativeByMonth, headcountByMonth, linearForecast, nextMonths } from './history';
+import type { HistoryQueryDto, PortfolioHistoryDto, PortfolioQueryDto, PortfolioSummaryDto } from './portfolio.dto';
 
 type Value = { value: number | null };
 type Buckets<T = object> = { buckets: ({ key: string | number; key_as_string?: string; doc_count: number } & T)[] };
@@ -107,6 +109,41 @@ export class PortfolioService {
       readTrend: trendMonths.map((month) => ({ month, views: num(months.get(month)?.views), downloads: num(months.get(month)?.downloads) })),
       budget: { allocated: num(t.allocated, 2), spent: num(t.spent, 2) },
       fte: num(t.fte, 1),
+    };
+  }
+
+  /**
+   * Papers to date and headcount, month by month, with a straight-line forecast of each – the Summary's Papers and
+   * People cards. Scoped like everything else: a PI sees their topics' papers and their teams' people.
+   */
+  async history(user: Person, q: HistoryQueryDto): Promise<PortfolioHistoryDto> {
+    const months = trailingMonths(this.clock.today(), q.months ?? 24);
+    const forecastMonths = nextMonths(months[months.length - 1], q.horizon ?? 6);
+    const scope = await this.scope.topicScope(user);
+    const [papers, people] = await Promise.all([
+      this.es.search<Pick<Paper, 'published'>>({
+        index: ALIASES.papers,
+        size: MAX_DOCS,
+        _source: ['published'],
+        query: { bool: { filter: [ScopeService.toFilter(scope, 'topicId')] } },
+      }),
+      this.es.search<Pick<Person, 'started' | 'ended'>>({
+        index: ALIASES.people,
+        size: MAX_DOCS,
+        _source: ['started', 'ended'],
+        query: { bool: { filter: [ScopeService.peopleFilter(scope, user)] } },
+      }),
+    ]);
+    const series = (actual: number[], nonDecreasing: boolean) => ({
+      current: actual[actual.length - 1] ?? 0,
+      actual,
+      forecast: linearForecast(actual, forecastMonths.length, { nonDecreasing }),
+    });
+    return {
+      months,
+      forecastMonths,
+      papers: series(cumulativeByMonth(sources(papers).map((p) => p.published), months), true),
+      people: series(headcountByMonth(sources(people).filter((p) => p.started), months), false),
     };
   }
 }

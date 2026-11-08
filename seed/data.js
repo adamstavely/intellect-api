@@ -3,18 +3,18 @@
 (function () {
   // ---- People ----------------------------------------------------------
   const people = {
-    hv: { id: "hv", name: "Helena Vance",     init: "HV", role: "Lab Director",          title: "Chief", team: "Directorate" },
-    mo: { id: "mo", name: "Marcus Okonkwo",   init: "MO", role: "Principal Investigator", title: "PI", team: "Cognitive Systems" },
-    pr: { id: "pr", name: "Priya Raman",      init: "PR", role: "Principal Investigator", title: "PI", team: "Quantum & Sensing" },
-    sa: { id: "sa", name: "Sofia Almeida",    init: "SA", role: "Principal Investigator", title: "PI", team: "Energy & Materials" },
-    dw: { id: "dw", name: "Daniel Whitfield", init: "DW", role: "Principal Investigator", title: "PI", team: "Autonomy" },
-    lk: { id: "lk", name: "Lena Kirchner",    init: "LK", role: "Principal Investigator", title: "PI", team: "Synthetic Biology" },
-    am: { id: "am", name: "Arjun Mehta",      init: "AM", role: "Principal Investigator", title: "PI", team: "Climate Systems" },
+    hv: { id: "hv", name: "Helena Vance",     init: "HV", role: "Lab Director",          title: "Chief", team: "Directorate", start: "2019-03-04" },
+    mo: { id: "mo", name: "Marcus Okonkwo",   init: "MO", role: "Principal Investigator", title: "PI", team: "Cognitive Systems", start: "2020-01-06" },
+    pr: { id: "pr", name: "Priya Raman",      init: "PR", role: "Principal Investigator", title: "PI", team: "Quantum & Sensing", start: "2021-04-12" },
+    sa: { id: "sa", name: "Sofia Almeida",    init: "SA", role: "Principal Investigator", title: "PI", team: "Energy & Materials", start: "2020-09-01" },
+    dw: { id: "dw", name: "Daniel Whitfield", init: "DW", role: "Principal Investigator", title: "PI", team: "Autonomy", start: "2022-02-14" },
+    lk: { id: "lk", name: "Lena Kirchner",    init: "LK", role: "Principal Investigator", title: "PI", team: "Synthetic Biology", start: "2022-08-01" },
+    am: { id: "am", name: "Arjun Mehta",      init: "AM", role: "Principal Investigator", title: "PI", team: "Climate Systems", start: "2023-01-09" },
     // researchers
-    jt: { id: "jt", name: "Jonah Tran",       init: "JT", role: "Staff Scientist", title: "Staff", team: "Cognitive Systems" },
-    ec: { id: "ec", name: "Elena Castellanos",init: "EC", role: "Postdoc",        title: "Postdoc", team: "Cognitive Systems" },
-     rb: { id: "rb", name: "Rafael Brandt",   init: "RB", role: "Staff Scientist", title: "Staff", team: "Energy & Materials" },
-    ny: { id: "ny", name: "Naomi Yusuf",      init: "NY", role: "Postdoc",        title: "Postdoc", team: "Autonomy" },
+    jt: { id: "jt", name: "Jonah Tran",       init: "JT", role: "Staff Scientist", title: "Staff", team: "Cognitive Systems", start: "2023-06-05" },
+    ec: { id: "ec", name: "Elena Castellanos",init: "EC", role: "Postdoc",        title: "Postdoc", team: "Cognitive Systems", start: "2024-09-02" },
+     rb: { id: "rb", name: "Rafael Brandt",   init: "RB", role: "Staff Scientist", title: "Staff", team: "Energy & Materials", start: "2024-01-15" },
+    ny: { id: "ny", name: "Naomi Yusuf",      init: "NY", role: "Postdoc",        title: "Postdoc", team: "Autonomy", start: "2025-03-03" },
   };
 
   // helper to make a sparkline series

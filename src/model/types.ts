@@ -21,6 +21,10 @@ export interface Person {
   team: string | null;
   allocations: Allocation[];
   capacity: number;
+  /** When they joined, YYYY-MM-DD. */
+  started: string;
+  /** When they left, YYYY-MM-DD; null while they're here. */
+  ended: string | null;
 }
 
 export interface OrgUnit {

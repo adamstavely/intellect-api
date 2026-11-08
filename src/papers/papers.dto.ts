@@ -27,6 +27,11 @@ export class PapersQueryDto {
   @IsOptional()
   @IsIn(['published', 'reads'])
   sort?: 'published' | 'reads';
+
+  /** Adds each paper's `periodTotals` for this period: `ytd`, `FY26`, `FY26-Q2` or a month, `2026-11`. */
+  @IsOptional()
+  @IsString()
+  period?: string;
 }
 
 export class TopPapersQueryDto {
@@ -75,6 +80,8 @@ export class PaperListItemDto extends PaperDto {
   totals!: MetricTotalsDto;
   /** Time to first citation, from monthly metrics. */
   firstCitation!: FirstCitationDto;
+  /** Views, citations and the rest within the requested `period`; present only when one was asked for. */
+  periodTotals?: MetricTotalsDto;
 }
 
 export class FirstCitationQueryDto {
@@ -102,7 +109,7 @@ export class FirstCitationSummaryDto {
 
 export class TopPaperDto extends PaperListItemDto {
   /** Totals within the requested period. */
-  periodTotals!: MetricTotalsDto;
+  declare periodTotals: MetricTotalsDto;
 }
 
 export class PaperDetailDto extends PaperListItemDto {

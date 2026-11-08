@@ -1,4 +1,5 @@
-import { IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { CollaborationCountsDto } from '../model/model.dto';
 import { HealthMixDto, RollupBudgetDto } from '../org/org.dto';
 
@@ -52,4 +53,49 @@ export class PortfolioSummaryDto {
   readTrend!: MonthlyReadsDto[];
   budget!: RollupBudgetDto;
   fte!: number;
+}
+
+export class HistoryQueryDto {
+  /** Months of history, ending this month: 6–60, default 24. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(6)
+  @Max(60)
+  months?: number;
+
+  /** Months to forecast after this one: 1–24, default 6. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(24)
+  horizon?: number;
+}
+
+export class ForecastPointDto {
+  value!: number;
+  /** The low and high ends of an 80% range around `value`. */
+  low!: number;
+  high!: number;
+}
+
+export class HistorySeriesDto {
+  /** The value now: the last of `actual`. */
+  current!: number;
+  /** One value per month in `months`. */
+  actual!: number[];
+  /** One point per month in `forecastMonths`: a straight-line trend through the last twelve months. */
+  forecast!: ForecastPointDto[];
+}
+
+export class PortfolioHistoryDto {
+  /** The history's months, YYYY-MM, oldest first, ending this month. */
+  months!: string[];
+  /** The forecast's months, after `months`. */
+  forecastMonths!: string[];
+  /** Papers published to date, in the caller's scope: a running total. */
+  papers!: HistorySeriesDto;
+  /** People here at each month's end, in the caller's scope. */
+  people!: HistorySeriesDto;
 }
