@@ -27,10 +27,23 @@ describe('history', () => {
   it('carries a straight line on, with a range that widens', () => {
     const f = linearForecast([1, 2, 3, 4, 5, 6], 2);
     expect(f.map((p) => p.value)).toEqual([7, 8]);
-    // A perfect line has no spread
-    expect(f[0]).toEqual({ value: 7, low: 7, high: 7 });
+    // A perfect line still has the least range a count can have: 1.28 × 0.5 a month
+    expect(f[0]).toEqual({ value: 7, low: 6.4, high: 7.6 });
     const noisy = linearForecast([2, 4, 3, 6, 5, 7], 3);
     expect(noisy[2].high - noisy[2].low).toBeGreaterThan(noisy[0].high - noisy[0].low);
+  });
+
+  it('gives a flat stretch a range from how the whole history has moved', () => {
+    // Twelve flat months after a climb: the window has no residuals, but the history's steps do
+    const f = linearForecast([2, 4, 6, 8, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11], 3);
+    expect(f[0].value).toBe(11);
+    expect(f[0].high - f[0].low).toBeGreaterThan(2 * 1.28 * 0.5);
+    expect(f[2].high - f[2].low).toBeGreaterThan(f[0].high - f[0].low);
+  });
+
+  it('never forecasts a zero-width range, even from a history that never moved', () => {
+    const f = linearForecast([4, 4, 4, 4], 1);
+    expect(f[0].high - f[0].low).toBeGreaterThan(0);
   });
 
   it('keeps a running total from falling, and anything from going below zero', () => {
