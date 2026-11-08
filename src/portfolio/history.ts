@@ -38,12 +38,24 @@ export function nextMonths(last: string, count: number): string[] {
   });
 }
 
+/** Counts move in whole units, so even a history that never moved can't promise less than half a unit a month. */
+const MIN_SPREAD = 0.5;
+
 /**
  * A straight-line forecast: least squares through the last `window` months, carried `horizon` months on. The range
- * widens with distance – the residuals' standard deviation times 1.28 (an 80% band) times √(months ahead) – and never
- * goes below zero. A running total can't fall, so with `nonDecreasing` the line and its range stay at or above the last
- * actual value.
+ * widens with distance – a spread times 1.28 (an 80% band) times √(months ahead) – and never goes below zero. The
+ * spread is the larger of how far the window strays from its line and how much the whole history moves month to month,
+ * so a stretch that happens to be flat still has a range; never under MIN_SPREAD. A running total can't fall, so with
+ * `nonDecreasing` the line and its range stay at or above the last actual value.
  */
+/** The standard deviation of the month-to-month changes over the whole history. */
+function stepSd(values: number[]): number {
+  const steps = values.slice(1).map((v, i) => v - values[i]);
+  if (steps.length < 2) return 0;
+  const mean = steps.reduce((s, d) => s + d, 0) / steps.length;
+  return Math.sqrt(steps.reduce((s, d) => s + (d - mean) ** 2, 0) / (steps.length - 1));
+}
+
 export function linearForecast(values: number[], horizon: number, { window = 12, nonDecreasing = false } = {}): ForecastPoint[] {
   if (!values.length || horizon <= 0) return [];
   const ys = values.slice(-window);
@@ -55,7 +67,8 @@ export function linearForecast(values: number[], horizon: number, { window = 12,
   const slope = sxx ? ys.reduce((s, y, x) => s + (x - meanX) * (y - meanY), 0) / sxx : 0;
   const intercept = meanY - slope * meanX;
   const residuals = ys.map((y, x) => y - (intercept + slope * x));
-  const sd = n > 2 ? Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / (n - 2)) : 0;
+  const residualSd = n > 2 ? Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / (n - 2)) : 0;
+  const sd = Math.max(residualSd, stepSd(values), MIN_SPREAD);
   const floor = nonDecreasing ? last : 0;
   return Array.from({ length: horizon }, (_, i) => {
     const h = i + 1;
