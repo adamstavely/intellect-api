@@ -95,6 +95,8 @@ export interface ProtoSubLab {
   name: string;
   short: string;
   code: string;
+  /** The center's logo, a URL (e.g. "/brand/centers/afmc.svg" served by the app); absent shows its code. */
+  logo?: string;
   /** Absent for a center with no teams yet. */
   lead?: string;
   teams: string[];

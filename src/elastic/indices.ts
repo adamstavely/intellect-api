@@ -54,6 +54,7 @@ export const INDICES: IndexDefinition[] = [
       kind: keyword,
       name: textWithKeyword,
       code: keyword,
+      logo: { type: 'keyword', index: false },
       parentId: keyword,
       leadId: keyword,
       focus: text,
