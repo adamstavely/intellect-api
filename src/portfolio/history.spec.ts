@@ -8,7 +8,17 @@ describe('history', () => {
   });
 
   it('counts papers published by the end of each month', () => {
-    expect(cumulativeByMonth(['2026-01-15', '2026-03-01', '2026-03-31'], ['2025-12', '2026-01', '2026-02', '2026-03'])).toEqual([0, 1, 1, 3]);
+    expect(cumulativeByMonth(['2026-01-15', '2026-03-01', '2026-03-31'], ['2025-12', '2026-01', '2026-02', '2026-03'], '2026-06-01')).toEqual([0, 1, 1, 3]);
+  });
+
+  it('counts the current month only up to today', () => {
+    // On 8 November, a paper due out on the 20th isn't published yet; a start on the 15th hasn't happened.
+    expect(cumulativeByMonth(['2026-10-02', '2026-11-03', '2026-11-20'], ['2026-10', '2026-11'], '2026-11-08')).toEqual([1, 2]);
+    const people = [
+      { started: '2026-01-05', ended: '2026-11-30' },
+      { started: '2026-11-15', ended: null },
+    ];
+    expect(headcountByMonth(people, ['2026-10', '2026-11'], '2026-11-08')).toEqual([1, 1]);
   });
 
   it('counts people here at the end of each month', () => {
@@ -17,7 +27,7 @@ describe('history', () => {
       { started: '2025-02-01', ended: '2025-03-15' },
       { started: '2025-04-01', ended: null },
     ];
-    expect(headcountByMonth(people, ['2024-12', '2025-01', '2025-02', '2025-03', '2025-04'])).toEqual([0, 1, 2, 1, 2]);
+    expect(headcountByMonth(people, ['2024-12', '2025-01', '2025-02', '2025-03', '2025-04'], '2025-06-01')).toEqual([0, 1, 2, 1, 2]);
   });
 
   it('lists the months after a month, across a year', () => {

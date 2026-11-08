@@ -94,6 +94,8 @@ export interface Topic {
   stats: TopicStats;
   momentum: number;
   trend: number[];
+  /** `<creator id>:<Idempotency-Key>` from the request that created it, when one was sent. Never returned. */
+  idempotencyKey?: string;
 }
 
 export type QuestionStatus = 'open' | 'partially' | 'answered';

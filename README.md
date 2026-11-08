@@ -72,7 +72,7 @@ Every API request is audited, reads included, along with requests refused by aut
 
 The response carries the event's id as `X-Request-Id`.
 
-Events go to the append-only `audit` index, written in batches so requests don't wait on them. Set a retention ILM policy on `audit-v*` in production.
+Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level. Set a retention ILM policy on `audit-v*` in production.
 
 **Forwarding to an external service.** Set `AUDIT_WEBHOOK_URL` to POST the trail to an HTTPS endpoint. Plain http is accepted only on localhost, for development.
 
@@ -83,6 +83,7 @@ Events go to the append-only `audit` index, written in batches so requests don't
 | `AUDIT_FORWARD_INTERVAL_MS` | 5000 | How often to look for new events |
 | `AUDIT_FORWARD_BATCH` | 200 | Most events per POST |
 | `AUDIT_WEBHOOK_TIMEOUT_MS` | 10000 | How long to wait for the endpoint |
+| `AUDIT_FORWARD_SETTLE_MS` | 30000 | How long after it is stored an event waits before it is sent. Keep this above write latency plus clock skew between replicas. |
 
 Each delivery is `POST {"events":[…]}` with these headers:
 - `X-Intellect-Delivery`: unique per attempt;
@@ -91,7 +92,7 @@ Each delivery is `POST {"events":[…]}` with these headers:
 
 The receiver should verify the signature, reject stale timestamps, and answer 2xx.
 
-Delivery follows a cursor kept in the `audit-cursor` index, which moves only on a 2xx. An outage or a restart therefore loses nothing: failed deliveries back off (doubling, up to 5 minutes) and resume where they stopped. Delivery is **at-least-once**, so de-duplicate on each event's `id`.
+Delivery follows a cursor kept in the `audit-cursor` index, which moves only on a 2xx. An outage or a restart therefore loses nothing: failed deliveries back off (doubling, up to 5 minutes) and resume where they stopped. Events go out in the order they were stored (`indexedAt`), not the order the requests finished (`at`). An event written late, for example after a retried write, is still delivered. Delivery is **at-least-once**, so de-duplicate on each event's `id`.
 
 ## Data model
 

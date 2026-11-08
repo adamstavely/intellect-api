@@ -7,13 +7,19 @@ export const sources = <T>(res: { hits: { hits: { _source?: T }[] } }): T[] =>
 export const totalHits = (res: { hits: { total?: estypes.SearchTotalHits | number } }): number =>
   typeof res.hits.total === 'number' ? res.hits.total : (res.hits.total?.value ?? 0);
 
-/** Fetches docs by id into a map; ids that don't exist are left out. */
+/**
+ * Fetches docs by id into a map; ids that don't exist are left out. A doc Elasticsearch failed to read (a shard
+ * unavailable, say) throws instead, so callers never mistake a failed read for a missing record.
+ */
 export async function getMany<T>(es: Client, index: string, ids: string[], fields?: string[]): Promise<Map<string, T>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return new Map();
   const res = await es.mget<T>({ index, ids: unique, ...(fields ? { _source: fields } : {}) });
   const out = new Map<string, T>();
-  for (const d of res.docs) if ('found' in d && d.found && d._source) out.set(d._id, d._source);
+  for (const d of res.docs) {
+    if ('error' in d) throw new Error(`Could not read ${index}/${d._id}: ${d.error.type}: ${d.error.reason ?? ''}`);
+    if (d.found && d._source) out.set(d._id, d._source);
+  }
   return out;
 }
 

@@ -117,7 +117,8 @@ export class PortfolioService {
    * People cards. Scoped like everything else: a PI sees their topics' papers and their teams' people.
    */
   async history(user: Person, q: HistoryQueryDto): Promise<PortfolioHistoryDto> {
-    const months = trailingMonths(this.clock.today(), q.months ?? 24);
+    const today = this.clock.today();
+    const months = trailingMonths(today, q.months ?? 24);
     const forecastMonths = nextMonths(months[months.length - 1], q.horizon ?? 6);
     const scope = await this.scope.topicScope(user);
     const [papers, people] = await Promise.all([
@@ -142,8 +143,8 @@ export class PortfolioService {
     return {
       months,
       forecastMonths,
-      papers: series(cumulativeByMonth(sources(papers).map((p) => p.published), months), true),
-      people: series(headcountByMonth(sources(people).filter((p) => p.started), months), false),
+      papers: series(cumulativeByMonth(sources(papers).map((p) => p.published), months, today), true),
+      people: series(headcountByMonth(sources(people).filter((p) => p.started), months, today), false),
     };
   }
 }

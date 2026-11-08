@@ -5,9 +5,10 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from '../../src/app.module';
 import { Clock } from '../../src/common/clock';
+import { ES_CLIENT } from '../../src/elastic/elastic.module';
 import { INDICES } from '../../src/elastic/indices';
 import { migrate } from '../../src/elastic/migrate';
-import type { Topic } from '../../src/model/types';
+import type { Question, Topic } from '../../src/model/types';
 import { seed } from '../../src/seed/seed';
 import { reconcile } from '../../src/topic-health/reconcile';
 import { resetCluster, testClient } from './es';
@@ -109,6 +110,80 @@ describe('writes, brief and reconcile', () => {
       await create('hv', { ...base, plannedFte: 25 }).expect(400);
       await create('hv', { ...base, plannedFte: 1.25 }).expect(400);
     });
+
+    it('trims before validating, so blank names, tags and questions fail', async () => {
+      await create('hv', { ...base, name: '   ' }).expect(400);
+      await create('hv', { ...base, tags: [' '] }).expect(400);
+      await create('hv', { ...base, questions: ['\t'] }).expect(400);
+    });
+
+    describe('when the opening questions fail', () => {
+      const appEs = () => app.get<Client>(ES_CLIENT);
+      const keyed = (key: string, body: object) => create('hv', body).set('Idempotency-Key', key);
+      const questionsOf = async (topicId: string) => {
+        await es.indices.refresh({ index: 'questions' });
+        const res = await es.search<Question>({ index: 'questions', query: { term: { topicId } } });
+        return res.hits.hits.map((h) => h._source!.text).sort();
+      };
+      const exists = (id: string) => es.exists({ index: 'topics', id });
+      /** Fails the next questions bulk write; other bulk writes (the audit trail's) go through. */
+      const failQuestionsOnce = () => {
+        const client = appEs();
+        const bulk = client.bulk.bind(client);
+        let failed = false;
+        jest.spyOn(client, 'bulk').mockImplementation(((params: { operations?: { create?: { _index?: string } }[] }) => {
+          if (!failed && params.operations?.[0]?.create?._index === 'questions') {
+            failed = true;
+            return Promise.reject(new Error('connection reset'));
+          }
+          return bulk(params);
+        }) as never);
+      };
+      afterEach(() => jest.restoreAllMocks());
+
+      it('removes the topic when the bulk request itself fails', async () => {
+        failQuestionsOnce();
+        const res = await create('hv', { ...base, name: 'Thermal Imaging', questions: ['Q1'] }).expect(500);
+        expect(res.body.message).toBe('Could not save the opening questions; the topic was not created');
+        expect(await exists('t-thermal-imaging')).toBe(false);
+      });
+
+      it('finishes the topic on a retry with the same Idempotency-Key, without a duplicate', async () => {
+        const body = { ...base, name: 'Lidar Fusion', questions: ['Q1', 'Q2'] };
+        // The write fails and so does the clean-up, leaving the topic behind.
+        failQuestionsOnce();
+        jest.spyOn(appEs(), 'deleteByQuery').mockRejectedValueOnce(new Error('connection reset'));
+        const failed = await keyed('k-lidar-1', body).expect(500);
+        expect(failed.body.message).toMatch(/t-lidar-fusion; retry with the same Idempotency-Key/);
+        expect(await exists('t-lidar-fusion')).toBe(true);
+        jest.restoreAllMocks();
+
+        const retried = await keyed('k-lidar-1', body).expect(201);
+        expect(retried.body).toMatchObject({ id: 't-lidar-fusion', stats: { questions: 2 } });
+        expect(retried.body).not.toHaveProperty('idempotencyKey');
+        // A repeat after success returns the same topic and writes nothing new.
+        expect((await keyed('k-lidar-1', body).expect(201)).body.id).toBe('t-lidar-fusion');
+        expect(await questionsOf('t-lidar-fusion')).toEqual(['Q1', 'Q2']);
+        expect(await exists('t-lidar-fusion-2')).toBe(false);
+      });
+
+      it('refuses a key reused for a different topic, and keeps keys per user', async () => {
+        await keyed('k-lidar-1', { ...base, name: 'Something Else' }).expect(409);
+        const mo = await create('mo', { ...base, name: 'Lidar Fusion' }).set('Idempotency-Key', 'k-lidar-1').expect(201);
+        expect(mo.body.id).toBe('t-lidar-fusion-2');
+        await keyed('not a key!', base).expect(400);
+      });
+    });
+  });
+
+  describe('GET /search by tag', () => {
+    it('finds a tag whatever its case', async () => {
+      await http().post('/topics').set('X-Intellect-User', 'hv').send({ name: 'Hypersonic Flow', bin: 2, teamId: 'team-cognitive-systems', leadId: 'mo', tags: ['DARPA'] }).expect(201);
+      for (const q of ['DARPA', 'darpa']) {
+        const res = await http().get(`/search?q=${q}`).set('X-Intellect-User', 'hv').expect(200);
+        expect(res.body.topics.map((t: { id: string }) => t.id)).toContain('t-hypersonic-flow');
+      }
+    });
   });
 
   describe('GET /brief', () => {
@@ -132,6 +207,18 @@ describe('writes, brief and reconcile', () => {
       expect(res.body.atAGlance.topics).toBe(2);
       expect(res.body.centers.map((c: { id: string }) => c.id)).toEqual(['c-nemc']);
       expect(res.body.exposure.every((g: { topicId: string }) => ['t-carbon', 't-grid'].includes(g.topicId))).toBe(true);
+    });
+
+    it('counts every exposed gap, past the first hundred', async () => {
+      const exposed = async () => (await http().get('/brief').set('X-Intellect-User', 'hv').expect(200)).body.exposure.length as number;
+      const before = await exposed();
+      const gaps = Array.from({ length: 101 }, (_, i) => ({ id: `g-bulk-${i}`, topicId: 't-neuro', text: `Bulk gap ${i}`, severity: 'critical', status: 'open', ownerId: 'mo', questionIds: [] }));
+      await es.bulk({ refresh: true, operations: gaps.flatMap((g) => [{ create: { _index: 'gaps', _id: g.id } }, g]) });
+      try {
+        expect(await exposed()).toBe(before + 101);
+      } finally {
+        await es.deleteByQuery({ index: 'gaps', query: { prefix: { id: 'g-bulk-' } }, refresh: true });
+      }
     });
   });
 

@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -92,12 +92,20 @@ export class CreateTopicBudgetDto {
   fy?: string;
 }
 
+/** Trims strings, and each string in an array, before validation, so "  " fails a minimum length of 1. */
+const Trim = () =>
+  Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : Array.isArray(value) ? (value as unknown[]).map((v) => (typeof v === 'string' ? v.trim() : v)) : value,
+  );
+
 export class CreateTopicDto {
+  @Trim()
   @IsString()
   @Length(1, 120)
   name!: string;
 
   @IsOptional()
+  @Trim()
   @IsString()
   @Length(0, 500)
   summary?: string;
@@ -110,6 +118,7 @@ export class CreateTopicDto {
 
   /** Defaults from the bin: 1 Flagship, 2–3 Core, 4 Emerging. */
   @IsOptional()
+  @Trim()
   @IsString()
   @Length(1, 40)
   priorityLabel?: string;
@@ -123,6 +132,7 @@ export class CreateTopicDto {
   leadId!: string;
 
   @IsOptional()
+  @Trim()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
@@ -130,6 +140,7 @@ export class CreateTopicDto {
   tags?: string[];
 
   @IsOptional()
+  @Trim()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
@@ -151,6 +162,7 @@ export class CreateTopicDto {
 
   /** Opening research questions, owned by the lead. */
   @IsOptional()
+  @Trim()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
