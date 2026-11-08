@@ -2485,6 +2485,26 @@
           "invested"
         ]
       },
+      "CenterRefDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "code"
+        ]
+      },
       "MentionsDto": {
         "type": "object",
         "properties": {
@@ -2643,6 +2663,13 @@
               "$ref": "#/components/schemas/PersonRefDto"
             }
           },
+          "authorCenters": {
+            "description": "The centers the authors' teams are in, each once, in author order; authors outside a team add none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CenterRefDto"
+            }
+          },
           "totals": {
             "description": "Lifetime totals.",
             "allOf": [
@@ -2678,6 +2705,7 @@
           "feedback",
           "topic",
           "authors",
+          "authorCenters",
           "totals",
           "firstCitation"
         ]
@@ -2770,6 +2798,13 @@
               "$ref": "#/components/schemas/PersonRefDto"
             }
           },
+          "authorCenters": {
+            "description": "The centers the authors' teams are in, each once, in author order; authors outside a team add none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CenterRefDto"
+            }
+          },
           "totals": {
             "description": "Lifetime totals.",
             "allOf": [
@@ -2813,6 +2848,7 @@
           "feedback",
           "topic",
           "authors",
+          "authorCenters",
           "totals",
           "firstCitation",
           "periodTotals"
@@ -3060,6 +3096,13 @@
               "$ref": "#/components/schemas/PersonRefDto"
             }
           },
+          "authorCenters": {
+            "description": "The centers the authors' teams are in, each once, in author order; authors outside a team add none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CenterRefDto"
+            }
+          },
           "totals": {
             "description": "Lifetime totals.",
             "allOf": [
@@ -3133,6 +3176,7 @@
           "feedback",
           "topic",
           "authors",
+          "authorCenters",
           "totals",
           "firstCitation",
           "metrics",

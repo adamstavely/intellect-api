@@ -5,7 +5,7 @@ import { getMany, MAX_DOCS, sources } from '../common/es';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import type { Citation, Paper, PaperMetrics, Person, Topic } from '../model/types';
+import type { Citation, OrgUnit, Paper, PaperMetrics, Person, Topic } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { TopicRollupService } from '../topic-health/topic-rollup.service';
 import { firstCitation, firstCitedMonths, median, monthsBetween } from './first-citation';
@@ -166,15 +166,26 @@ export class PapersService {
   private async decorate(papers: Paper[], totals: Map<string, MetricTotalsDto>): Promise<PaperListItemDto[]> {
     const [topics, people, first] = await Promise.all([
       getMany<Topic>(this.es, ALIASES.topics, papers.map((p) => p.topicId), ['id', 'name']),
-      getMany<Person>(this.es, ALIASES.people, papers.flatMap((p) => p.authorIds), ['id', 'name', 'initials']),
+      getMany<Person>(this.es, ALIASES.people, papers.flatMap((p) => p.authorIds), ['id', 'name', 'initials', 'team']),
       firstCitedMonths(this.es, papers.map((p) => p.id)),
     ]);
-    return papers.map((p) => ({
-      ...p,
-      topic: { id: p.topicId, name: topics.get(p.topicId)?.name ?? p.topicId },
-      authors: p.authorIds.map((a) => people.get(a)).filter((a): a is Person => !!a).map((a) => ({ id: a.id, name: a.name, initials: a.initials })),
-      totals: totals.get(p.id) ?? EMPTY_TOTALS,
-      firstCitation: firstCitation(p.published, first.get(p.id)),
-    }));
+    // Author → team → center, for each paper's authorCenters
+    const teamIds = [...new Set([...people.values()].map((a) => a.team).filter((t): t is string => !!t))];
+    const teams = await getMany<OrgUnit>(this.es, ALIASES.orgUnits, teamIds, ['id', 'parentId']);
+    const centerIds = [...new Set([...teams.values()].map((t) => t.parentId).filter((c): c is string => !!c))];
+    const centers = await getMany<OrgUnit>(this.es, ALIASES.orgUnits, centerIds, ['id', 'name', 'code']);
+    const centerOf = (a: Person) => centers.get(teams.get(a.team ?? '')?.parentId ?? '');
+    return papers.map((p) => {
+      const authors = p.authorIds.map((a) => people.get(a)).filter((a): a is Person => !!a);
+      const authorCenters = new Map(authors.map(centerOf).filter((c): c is OrgUnit => !!c).map((c) => [c.id, { id: c.id, name: c.name, code: c.code }]));
+      return {
+        ...p,
+        topic: { id: p.topicId, name: topics.get(p.topicId)?.name ?? p.topicId },
+        authors: authors.map((a) => ({ id: a.id, name: a.name, initials: a.initials })),
+        authorCenters: [...authorCenters.values()],
+        totals: totals.get(p.id) ?? EMPTY_TOTALS,
+        firstCitation: firstCitation(p.published, first.get(p.id)),
+      };
+    });
   }
 }
