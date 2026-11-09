@@ -95,6 +95,7 @@ export const INDICES: IndexDefinition[] = [
       momentum: integer,
       trend: integer,
       idempotencyKey: keyword,
+      idempotencyHash: { type: 'keyword', index: false },
     }),
   },
   {
@@ -186,7 +187,7 @@ export const INDICES: IndexDefinition[] = [
     }),
   },
   {
-    // Append-only: the API only ever creates audit documents. Retention belongs to an ILM policy in production.
+    // Append-only: the API only ever creates audit documents; forwarding only adds forwardedAt. Retention belongs to an ILM policy in production.
     alias: 'audit',
     version: 1,
     mappings: strict({
@@ -194,6 +195,8 @@ export const INDICES: IndexDefinition[] = [
       at: timestamp,
       // When it was written (each attempt restamps it); audit forwarding follows this.
       indexedAt: timestamp,
+      // When the webhook accepted it; the one field ever changed after the event is written.
+      forwardedAt: timestamp,
       actor: object({ id: keyword, name: keyword, role: keyword, authenticated: { type: 'boolean' } }),
       action: keyword,
       method: keyword,

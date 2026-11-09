@@ -292,7 +292,7 @@
             "description": "Not the Chief or a PI, or a PI naming someone else as lead"
           },
           "409": {
-            "description": "The Idempotency-Key was already used for a different topic"
+            "description": "The Idempotency-Key was already used for a different topic, or with different details"
           }
         },
         "security": [
@@ -300,7 +300,7 @@
             "intellect-user": []
           }
         ],
-        "summary": "New Topic flow: creates the topic and its opening questions. Chief, or a PI creating a topic they lead.\nSend an Idempotency-Key to make retries safe: a repeat finishes the topic that key created instead of making another.",
+        "summary": "New Topic flow: creates the topic and its opening questions. Chief, or a PI creating a topic they lead.\nSend an Idempotency-Key to make retries safe: a repeat of the same request finishes the topic that key created\ninstead of making another. The key sent again with different details is refused (409).",
         "tags": [
           "topics"
         ]

@@ -15,6 +15,8 @@ export interface AuditEvent {
    * Forwarding follows this, not `at`, so an event written late is still sent. Absent until stored.
    */
   indexedAt?: string;
+  /** When the webhook accepted it; set by forwarding, never sent. */
+  forwardedAt?: string;
   actor: {
     /** The person the request ran as, or the id it claimed when auth refused it. */
     id: string | null;

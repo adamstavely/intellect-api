@@ -23,14 +23,15 @@ export class TopicsController {
 
   /**
    * New Topic flow: creates the topic and its opening questions. Chief, or a PI creating a topic they lead.
-   * Send an Idempotency-Key to make retries safe: a repeat finishes the topic that key created instead of making another.
+   * Send an Idempotency-Key to make retries safe: a repeat of the same request finishes the topic that key created
+   * instead of making another. The key sent again with different details is refused (409).
    */
   @Post()
   @Roles('chief', 'pi')
   @ApiHeader({ name: IDEMPOTENCY_HEADER, required: false, description: 'Up to 200 of A–Z a–z 0–9 . _ : -; a UUID per New Topic submission is ideal' })
   @ApiForbiddenResponse({ description: 'Not the Chief or a PI, or a PI naming someone else as lead' })
   @ApiBadRequestResponse({ description: 'Validation failed, unknown lead or team, or a malformed Idempotency-Key' })
-  @ApiConflictResponse({ description: 'The Idempotency-Key was already used for a different topic' })
+  @ApiConflictResponse({ description: 'The Idempotency-Key was already used for a different topic, or with different details' })
   create(@CurrentUser() user: Person, @Body() body: CreateTopicDto, @Headers(IDEMPOTENCY_HEADER) key?: string): Promise<TopicDetailDto> {
     if (key !== undefined && !IDEMPOTENCY_KEY.test(key)) throw new BadRequestException(`Malformed ${IDEMPOTENCY_HEADER}`);
     return this.topics.create(user, body, key);

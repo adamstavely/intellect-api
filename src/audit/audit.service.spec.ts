@@ -1,7 +1,7 @@
 import type { Client } from '@elastic/elasticsearch';
 import { Logger } from '@nestjs/common';
 import type { AuditEvent } from './audit-event';
-import { AuditService, MAX_ATTEMPTS } from './audit.service';
+import { AuditService, MAX_ATTEMPTS, SHUTDOWN_FLUSHES } from './audit.service';
 
 const event = (id: string) => ({ id, at: '2026-11-07T12:00:00.000Z' }) as AuditEvent;
 const item = (status: number, type = 'x') => ({ create: { status, ...(status >= 300 ? { error: { type, reason: type } } : {}) } });
@@ -49,5 +49,36 @@ describe('AuditService', () => {
     expect(logged.at(-1)).toMatch(/^Audit event a not written \(still failing after 10 attempts\)/);
     await audit.flush();
     expect(bulk).toHaveBeenCalledTimes(MAX_ATTEMPTS);
+  });
+
+  /** Shuts down as Nest does, letting the drain's pauses pass. */
+  const shutDown = async () => {
+    const done = audit.onModuleDestroy();
+    await jest.runAllTimersAsync();
+    await done;
+  };
+
+  it('on shutdown, retries a flush that failed for a moment instead of dropping its events', async () => {
+    bulk.mockRejectedValueOnce(new Error('connection reset'));
+    bulk.mockResolvedValueOnce({ errors: false, items: [item(201), item(201)] });
+    audit.record(event('a'));
+    audit.record(event('b'));
+    await shutDown();
+
+    expect(bulk).toHaveBeenCalledTimes(2);
+    expect(written(1).map((e) => e.id)).toEqual(['a', 'b']);
+    expect(bulk.mock.calls[1][1]).toMatchObject({ maxRetries: 0 });
+    expect(logged).toEqual(['Audit write failed, will retry: connection reset']);
+    expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('on shutdown, logs in full whatever still cannot be written, and leaves no retry behind', async () => {
+    bulk.mockRejectedValue(new Error('connection refused'));
+    audit.record(event('a'));
+    await shutDown();
+
+    expect(bulk).toHaveBeenCalledTimes(SHUTDOWN_FLUSHES);
+    expect(logged.at(-1)).toMatch(/^Audit event a not written \(still failing at shutdown\); event: \{"id":"a"/);
+    expect(jest.getTimerCount()).toBe(0);
   });
 });
