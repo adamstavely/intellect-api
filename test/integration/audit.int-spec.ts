@@ -27,6 +27,8 @@ describe('audit trail', () => {
     if (user) req = req.set('X-Intellect-User', user);
     return body ? req.send(body) : req;
   };
+  /** A copy of a stored event under a new id, as if never forwarded. */
+  const copy = ({ forwardedAt: _sent, ...e }: AuditEvent, id: string): AuditEvent => ({ ...e, id });
   const audited = async (): Promise<AuditEvent[]> => {
     await app.get(AuditService).flush();
     await es.indices.refresh({ index: 'audit' });
@@ -123,26 +125,47 @@ describe('audit trail', () => {
     const forwarder = app.get(AuditForwarder);
     await forwarder.forward();
     // Finished an hour ago, but only written now (a retried write, or a replica slow to flush).
-    const late = { ...(await audited())[0], id: 'late-1', at: new Date(Date.now() - 3_600_000).toISOString(), indexedAt: new Date().toISOString() };
+    const late = { ...copy((await audited())[0], 'late-1'), at: new Date(Date.now() - 3_600_000).toISOString(), indexedAt: new Date().toISOString() };
     await es.index({ index: 'audit', id: late.id, document: late, refresh: true });
     deliveries.length = 0;
     expect(await forwarder.forward()).toBe(1);
     expect((JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events[0].id).toBe('late-1');
   });
 
+  it('still forwards a write stamped before the cursor but stored after it, and only once', async () => {
+    const forwarder = app.get(AuditForwarder);
+    await forwarder.forward();
+    // Stamped a minute ago, but its request took that long: it only becomes visible after the cursor has passed it.
+    const stampedAt = Date.now() - 60_000;
+    const slow = { ...copy((await audited()).at(-1)!, 'slow-1'), at: new Date(stampedAt - 1000).toISOString(), indexedAt: new Date(stampedAt).toISOString() };
+    await es.index({ index: 'audit', id: slow.id, document: slow, refresh: true });
+    deliveries.length = 0;
+    expect(await forwarder.forward()).toBe(1);
+    expect((JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events.map((e) => e.id)).toEqual(['slow-1']);
+    expect(await forwarder.forward()).toBe(0);
+  });
+
   it('carries delivery over from the cursor kept before indexedAt', async () => {
     const forwarder = app.get(AuditForwarder);
-    // Back to how it was: events without indexedAt, and the old cursor after the second of them by `at`.
-    await es.updateByQuery({ index: 'audit', script: { source: "ctx._source.remove('indexedAt')" }, query: { match_all: {} }, refresh: true });
+    // Back to how it was: events without indexedAt or forwardedAt, and the old cursor after the second of them by `at`.
+    await es.updateByQuery({
+      index: 'audit',
+      script: { source: "ctx._source.remove('indexedAt'); ctx._source.remove('forwardedAt')" },
+      query: { match_all: {} },
+      refresh: true,
+    });
     await es.delete({ index: 'audit-cursor', id: 'webhook-v2', refresh: true });
     const old = await es.search<AuditEvent>({ index: 'audit', size: 2, sort: [{ at: 'asc' }, { id: 'asc' }] });
     await es.index({ index: 'audit-cursor', id: 'webhook', document: { sort: old.hits.hits[1].sort, updatedAt: new Date().toISOString() }, refresh: true });
     const total = (await es.count({ index: 'audit' })).count;
 
     deliveries.length = 0;
-    expect(await forwarder.forward()).toBe(total - 2);
+    // The first (late-1) finished an hour before the rest, beyond the overlap; the second (slow-1) is within it, so
+    // it's sent again (at-least-once), as it had no forwarded marker yet.
+    expect(await forwarder.forward()).toBe(total - 1);
     const sent = (JSON.parse(deliveries[0].body) as { events: AuditEvent[] }).events;
     expect(sent.map((e) => e.id)).not.toContain(old.hits.hits[0]._source!.id);
+    expect(sent.map((e) => e.id)).toContain(old.hits.hits[1]._source!.id);
     expect(sent.every((e) => e.indexedAt === e.at)).toBe(true);
   });
 });

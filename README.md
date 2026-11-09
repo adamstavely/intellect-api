@@ -72,7 +72,7 @@ Every API request is audited, reads included, along with requests refused by aut
 
 The response carries the event's id as `X-Request-Id`.
 
-Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level. Set a retention ILM policy on `audit-v*` in production.
+Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level, as is anything still queued when a shutdown's last few flushes fail. Set a retention ILM policy on `audit-v*` in production.
 
 **Forwarding to an external service.** Set `AUDIT_WEBHOOK_URL` to POST the trail to an HTTPS endpoint. Plain http is accepted only on localhost, for development.
 
@@ -92,7 +92,7 @@ Each delivery is `POST {"events":[…]}` with these headers:
 
 The receiver should verify the signature, reject stale timestamps, and answer 2xx.
 
-Delivery follows a cursor kept in the `audit-cursor` index, which moves only on a 2xx. An outage or a restart therefore loses nothing: failed deliveries back off (doubling, up to 5 minutes) and resume where they stopped. Events go out in the order they were stored (`indexedAt`), not the order the requests finished (`at`). An event written late, for example after a retried write, is still delivered. Delivery is **at-least-once**, so de-duplicate on each event's `id`.
+Delivery follows a cursor kept in the `audit-cursor` index, which moves only on a 2xx. An outage or a restart therefore loses nothing: failed deliveries back off (doubling, up to 5 minutes) and resume where they stopped. Events go out in the order they were stored (`indexedAt`), not the order the requests finished (`at`). An event written late, for example after a retried write, is still delivered: each scan also looks back behind the cursor by the longest an Elasticsearch write can take (request timeout × attempts, 2 minutes by default) plus `AUDIT_FORWARD_SETTLE_MS`, and each event the endpoint accepts is marked `forwardedAt` so that look-back doesn't send it again. Delivery is **at-least-once**, so de-duplicate on each event's `id`.
 
 ## Data model
 

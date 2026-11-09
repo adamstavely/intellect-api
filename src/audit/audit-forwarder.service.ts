@@ -1,10 +1,10 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client, errors } from '@elastic/elasticsearch';
+import { Client, ClientOptions, errors } from '@elastic/elasticsearch';
 import { randomUUID } from 'node:crypto';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import type { AuditConfig } from '../config/configuration';
+import { AuditConfig, maxWriteDelayMs } from '../config/configuration';
 import { AuditEvent, sign } from './audit-event';
 
 /** The cursor over [indexedAt, at, id]. */
@@ -14,6 +14,13 @@ const LEGACY_CURSOR_ID = 'webhook';
 const MAX_BACKOFF_MS = 5 * 60_000;
 
 type Cursor = { sort: (number | string)[] | null; updatedAt: string };
+type Sort = (number | string)[];
+
+/** Whether sort values `a` come after `b`. */
+const after = (a: Sort, b: Sort): boolean => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+};
 
 /**
  * Sends audit events on to an external HTTPS webhook, in order of when they were stored, in batches. Delivery is
@@ -22,8 +29,13 @@ type Cursor = { sort: (number | string)[] | null; updatedAt: string };
  *
  * The order is `indexedAt` (stamped on each write attempt), not `at` (when the request finished), so an event written
  * late – after a retry, or by a replica whose queue was slow to flush – still lands after the cursor. Events are only
- * sent once they're `settleMs` old, which covers the gap between stamping and becoming searchable, and clock skew
- * between replicas; keep it above both.
+ * sent once they're `settleMs` old, which covers the usual gap between stamping and becoming searchable, and clock
+ * skew between replicas; keep it above both.
+ *
+ * A write can be slower than that: indexedAt is stamped before the request, which the client may keep retrying for
+ * `requestTimeout × (maxRetries + 1)`. So each scan reaches back that far (plus `settleMs`) behind the cursor, and an
+ * event is marked `forwardedAt` once the webhook accepts it; the scan skips marked events, so the overlap doesn't
+ * resend them. Event content never changes, only that marker.
  *
  * It's at-least-once: a batch can be sent twice (a timeout after the receiver accepted it, or two replicas racing –
  * the cursor update is guarded, so only one advances), and receivers should de-duplicate on each event's `id`.
@@ -41,12 +53,15 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
   #backoff = 0;
   #stopped = false;
   #running: Promise<void> = Promise.resolve();
+  /** How far behind the cursor each scan starts, in ms. */
+  readonly #overlapMs: number;
 
   constructor(
     @Inject(ES_CLIENT) private readonly es: Client,
     config: ConfigService,
   ) {
     this.#config = config.getOrThrow<AuditConfig>('audit');
+    this.#overlapMs = this.#config.settleMs + maxWriteDelayMs(config.get<ClientOptions>('elasticsearch') ?? {});
   }
 
   get enabled(): boolean {
@@ -85,7 +100,7 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
     }, ms);
   }
 
-  /** Sends the next batch after the cursor and advances it. Returns how many events went. */
+  /** Sends the next batch of unsent events from just behind the cursor, and advances it. Returns how many events went. */
   async forward(): Promise<number> {
     let cursorDoc = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: CURSOR_ID }, { ignore: [404] });
     if (!cursorDoc.found) {
@@ -93,21 +108,29 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
       cursorDoc = await this.es.get<Cursor>({ index: ALIASES.auditCursor, id: CURSOR_ID }, { ignore: [404] });
     }
     const cursor = cursorDoc.found ? (cursorDoc._source?.sort ?? null) : null;
+    const from = cursor ? new Date(Number(cursor[0]) - this.#overlapMs).toISOString() : undefined;
     const res = await this.es.search<AuditEvent>({
       index: ALIASES.audit,
       size: this.#config.batchSize,
-      // Elasticsearch's clock, so replicas agree on the cut-off; date math counts whole seconds.
-      query: { range: { indexedAt: { lte: `now-${Math.ceil(this.#config.settleMs / 1000)}s` } } },
+      query: {
+        bool: {
+          // Elasticsearch's clock, so replicas agree on the cut-off; date math counts whole seconds.
+          filter: [{ range: { indexedAt: { lte: `now-${Math.ceil(this.#config.settleMs / 1000)}s`, ...(from ? { gte: from } : {}) } } }],
+          must_not: [{ exists: { field: 'forwardedAt' } }],
+        },
+      },
       // Events written together share indexedAt; within them, request order.
       sort: [{ indexedAt: 'asc' }, { at: 'asc' }, { id: 'asc' }],
-      ...(cursor ? { search_after: cursor } : {}),
     });
     const hits = res.hits.hits;
     if (!hits.length) return 0;
 
     await this.#post(hits.map((h) => h._source!));
+    await this.#markForwarded(hits);
 
-    const last = hits[hits.length - 1].sort as (number | string)[];
+    // A late event from the overlap can sort before the cursor; it never moves back.
+    const last = hits[hits.length - 1].sort as Sort;
+    if (cursor && !after(last, cursor)) return hits.length;
     const doc: Cursor = { sort: last, updatedAt: new Date().toISOString() };
     try {
       await this.es.index({
@@ -122,6 +145,18 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
       if (!(err instanceof errors.ResponseError && err.statusCode === 409)) throw err;
     }
     return hits.length;
+  }
+
+  /** Marks events the webhook accepted, so a later scan over the overlap doesn't send them again. */
+  async #markForwarded(hits: { _index: string; _id?: string }[]): Promise<void> {
+    const forwardedAt = new Date().toISOString();
+    const res = await this.es.bulk({
+      refresh: 'wait_for',
+      operations: hits.flatMap((h) => [{ update: { _index: h._index, _id: h._id! } }, { doc: { forwardedAt } }]),
+    });
+    // Unmarked events are sent again by the next scan (receivers de-duplicate); say so rather than carry on quietly.
+    const failed = res.items.filter((i) => i.update?.error);
+    if (failed.length) throw new Error(`${failed.length} forwarded events not marked: ${failed[0].update?.error?.reason ?? ''}`);
   }
 
   /**

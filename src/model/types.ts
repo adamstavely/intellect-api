@@ -101,6 +101,8 @@ export interface Topic {
   trend: number[];
   /** `<creator id>:<Idempotency-Key>` from the request that created it, when one was sent. Never returned. */
   idempotencyKey?: string;
+  /** Fingerprint of that request (see `requestHash`), so the key can't be replayed with different details. Never returned. */
+  idempotencyHash?: string;
 }
 
 export type QuestionStatus = 'open' | 'partially' | 'answered';

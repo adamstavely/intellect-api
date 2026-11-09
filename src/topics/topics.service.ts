@@ -8,7 +8,7 @@ import { ALIASES } from '../elastic/indices';
 import type { Citation, Gap, OrgUnit, Paper, Person, Question, Topic, Work } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { TopicRollupService } from '../topic-health/topic-rollup.service';
-import { fiscalYear, PRIORITY_LABEL, tidy, topicIdFor } from './create-topic';
+import { fiscalYear, PRIORITY_LABEL, requestHash, tidy, topicIdFor } from './create-topic';
 import { spineEdges } from './spine';
 import { NO_RECENT_PAPERS, recentPaperCounts } from '../papers/recent-papers';
 import type { CreateTopicDto, SpineDto, TopicDetailDto, TopicsQueryDto, TopicSort, TopicSummaryDto } from './topics.dto';
@@ -27,10 +27,13 @@ const personRef = (p: Pick<Person, 'id' | 'name' | 'initials'>) => ({ id: p.id, 
  * A stored topic as the API returns it: without the creating request's idempotency key. One stored before priority
  * types reads as internal, the default for a new one.
  */
-const shown = ({ idempotencyKey: _key, ...t }: Topic): Topic => ({ ...t, priorityType: t.priorityType ?? 'internal' });
+const shown = ({ idempotencyKey: _key, idempotencyHash: _hash, ...t }: Topic): Topic => ({ ...t, priorityType: t.priorityType ?? 'internal' });
 
+type QuestionIds = (topicId: string, i: number) => string;
 /** The i-th opening question's id: fixed by the topic, so writing the questions again doesn't duplicate them. */
-const questionId = (topicId: string, i: number) => `q-${createHash('sha256').update(`${topicId}:${i}`).digest('hex').slice(0, 8)}`;
+const questionId: QuestionIds = (topicId, i) => `${topicId}-q${i + 1}`;
+/** Ids from before they were scoped to the topic: 32 bits of hash. Only for finishing a topic created back then. */
+const legacyQuestionId: QuestionIds = (topicId, i) => `q-${createHash('sha256').update(`${topicId}:${i}`).digest('hex').slice(0, 8)}`;
 
 @Injectable()
 export class TopicsService {
@@ -50,7 +53,8 @@ export class TopicsService {
    *
    * With an idempotency key, a repeat of the request finishes the topic the first attempt created – writing any missing
    * questions and the rollups – rather than creating a second one. That covers a failure the clean-up couldn't undo,
-   * and a lost response. Two attempts racing with the same key can still both create; keys are for retries.
+   * and a lost response. A repeat must be the same request (by `requestHash`); different details under the key are a
+   * conflict. Two attempts racing with the same key can still both create; keys are for retries.
    */
   async create(user: Person, body: CreateTopicDto, idempotencyKey?: string): Promise<TopicDetailDto> {
     if (user.role !== 'chief' && body.leadId !== user.id) throw new ForbiddenException('A PI can only create topics they lead');
@@ -66,12 +70,15 @@ export class TopicsService {
     const today = this.clock.today();
     const key = idempotencyKey ? `${user.id}:${idempotencyKey}` : undefined;
     const texts = tidy(body.questions);
+    const hash = key ? requestHash(body) : undefined;
     const earlier = key ? await this.byIdempotencyKey(key) : undefined;
     if (earlier) {
-      if (earlier.name !== body.name.trim() || earlier.leadId !== body.leadId || earlier.teamId !== team.id) {
-        throw new ConflictException('This Idempotency-Key was already used to create a different topic');
-      }
-      await this.writeQuestions(earlier, texts);
+      // A topic created before request hashes were kept can only be checked on what it stored.
+      const same = earlier.idempotencyHash
+        ? earlier.idempotencyHash === hash
+        : earlier.name === body.name.trim() && earlier.leadId === body.leadId && earlier.teamId === team.id;
+      if (!same) throw new ConflictException('This Idempotency-Key was already used for a different topic, or with different details');
+      await this.writeQuestions(earlier, texts, earlier.idempotencyHash ? questionId : legacyQuestionId);
       await this.rollups.recompute(earlier.id, today);
       return this.get(user, earlier.id);
     }
@@ -95,7 +102,7 @@ export class TopicsService {
       stats: { questions: 0, gaps: 0, openGaps: 0, coverage: 1, work: 0, papers: 0, fte: 0, grades: { outstanding: 0, excellent: 0, satisfactory: 0, dissatisfactory: 0, ungraded: 0 }, collaboration: { unilateral: 0, joint: 0 } },
       momentum: 0,
       trend: [],
-      ...(key ? { idempotencyKey: key } : {}),
+      ...(key ? { idempotencyKey: key, idempotencyHash: hash } : {}),
     };
     topic.id = await this.createWithUniqueId(topic);
 
@@ -121,16 +128,25 @@ export class TopicsService {
     return sources(res)[0];
   }
 
-  /** Writes the opening questions. Ids are fixed per topic, so ones already written are left as they are. */
-  private async writeQuestions(topic: Pick<Topic, 'id' | 'leadId'>, texts: string[]): Promise<void> {
+  /**
+   * Writes the opening questions. Ids are fixed per topic, so ones already written are left as they are – after
+   * checking that each id taken really is this topic's question, so a clash fails instead of losing the question.
+   */
+  private async writeQuestions(topic: Pick<Topic, 'id' | 'leadId'>, texts: string[], ids: QuestionIds = questionId): Promise<void> {
     if (!texts.length) return;
-    const questions: Question[] = texts.map((text, i) => ({ id: questionId(topic.id, i), topicId: topic.id, text, status: 'open', ownerId: topic.leadId }));
+    const questions: Question[] = texts.map((text, i) => ({ id: ids(topic.id, i), topicId: topic.id, text, status: 'open', ownerId: topic.leadId }));
     const res = await this.es.bulk({
       refresh: 'wait_for',
       operations: questions.flatMap((q) => [{ create: { _index: ALIASES.questions, _id: q.id } }, q]),
     });
     const failed = res.items.filter((i) => i.create?.error && i.create.status !== 409);
     if (failed.length) throw new Error(`${failed.length} of ${questions.length} questions rejected: ${failed[0].create?.error?.reason ?? ''}`);
+
+    const taken = questions.filter((_, i) => res.items[i].create?.status === 409);
+    if (!taken.length) return;
+    const stored = await getMany<Question>(this.es, ALIASES.questions, taken.map((q) => q.id));
+    const clash = taken.find((q) => stored.get(q.id)?.topicId !== q.topicId || stored.get(q.id)?.text !== q.text);
+    if (clash) throw new Error(`Question id ${clash.id} is already used by ${stored.get(clash.id)?.topicId ?? 'a record that is gone'}`);
   }
 
   /** Best-effort undo of a half-made topic: its questions, then the topic. False when something was left behind. */

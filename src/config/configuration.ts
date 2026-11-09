@@ -21,6 +21,18 @@ export interface AuditConfig {
   settleMs: number;
 }
 
+/**
+ * The Elasticsearch client's defaults, spelled out: the longest a request can take before the client gives up is
+ * `requestTimeout × (maxRetries + 1)`, and audit forwarding re-scans that far behind its cursor (see AuditForwarder).
+ */
+export const ES_REQUEST_TIMEOUT_MS = 30_000;
+export const ES_MAX_RETRIES = 3;
+
+/** The longest an Elasticsearch write can still be in flight after it was sent, in ms. */
+export function maxWriteDelayMs(es: Pick<ClientOptions, 'requestTimeout' | 'maxRetries'>): number {
+  return (es.requestTimeout ?? ES_REQUEST_TIMEOUT_MS) * ((es.maxRetries ?? ES_MAX_RETRIES) + 1);
+}
+
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/;
 
 /**
@@ -63,6 +75,8 @@ export function elasticsearchOptions(env: NodeJS.ProcessEnv = process.env): Clie
   const password = env.ES_PASSWORD?.trim();
 
   return {
+    requestTimeout: ES_REQUEST_TIMEOUT_MS,
+    maxRetries: ES_MAX_RETRIES,
     ...(cloudId ? { cloud: { id: cloudId } } : {}),
     ...(node ? { node } : {}),
     ...(apiKey ? { auth: { apiKey } } : username && password ? { auth: { username, password } } : {}),

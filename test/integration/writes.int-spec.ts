@@ -171,8 +171,10 @@ describe('writes, brief and reconcile', () => {
         expect(await exists('t-lidar-fusion-2')).toBe(false);
       });
 
-      it('refuses a key reused for a different topic, and keeps keys per user', async () => {
+      it('refuses a key reused for a different topic or with different details, and keeps keys per user', async () => {
         await keyed('k-lidar-1', { ...base, name: 'Something Else' }).expect(409);
+        await keyed('k-lidar-1', { ...base, name: 'Lidar Fusion', questions: ['Q1', 'Q2'], priorityType: 'national' }).expect(409);
+        await keyed('k-lidar-1', { ...base, name: 'Lidar Fusion', questions: ['Q1', 'Q2', 'Q3'] }).expect(409);
         const mo = await create('mo', { ...base, name: 'Lidar Fusion' }).set('Idempotency-Key', 'k-lidar-1').expect(201);
         expect(mo.body.id).toBe('t-lidar-fusion-2');
         await keyed('not a key!', base).expect(400);
