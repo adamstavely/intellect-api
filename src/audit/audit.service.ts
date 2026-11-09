@@ -1,6 +1,6 @@
-import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
-import { ES_CLIENT } from '../elastic/elastic.module';
+import { ES_CLIENT, ElasticShutdown } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { AuditEvent } from './audit-event';
 
@@ -19,24 +19,37 @@ const retryable = (status: number) => status === 429 || status >= 500;
 
 /**
  * Writes audit events to the append-only `audit` index. Requests don't wait on it: events queue in memory and are
- * bulk-written every second (sooner when the queue fills), and the queue is drained on shutdown.
+ * bulk-written every second (sooner when the queue fills), and the queue is drained on shutdown – after the HTTP
+ * server has finished its last requests, and before the Elasticsearch client closes.
  *
  * A failed write is retried, whether the whole request failed or only some items in it (429s, 5xx). An event that
  * can't be written – a permanent rejection, or `MAX_ATTEMPTS` failures – is logged in full at error level, so it's
  * preserved for investigation rather than dropped silently.
  */
 @Injectable()
-export class AuditService implements OnModuleDestroy {
+export class AuditService implements OnApplicationShutdown {
   readonly #log = new Logger('Audit');
   #queue: AuditEvent[] = [];
   readonly #attempts = new Map<string, number>();
   #timer: NodeJS.Timeout | undefined;
   #flushing: Promise<void> = Promise.resolve();
   #stopping = false;
+  #drained = false;
+  #draining: Promise<void> | undefined;
 
-  constructor(@Inject(ES_CLIENT) private readonly es: Client) {}
+  constructor(
+    @Inject(ES_CLIENT) private readonly es: Client,
+    @Optional() shutdown?: ElasticShutdown,
+  ) {
+    shutdown?.beforeClose(() => this.drain());
+  }
 
   record(event: AuditEvent): void {
+    // Too late to write: Elasticsearch may already be closed. Kept in the log instead, like any event given up on.
+    if (this.#drained) {
+      this.#giveUp(event, 'recorded after the shutdown drain');
+      return;
+    }
     this.#queue.push(event);
     if (this.#queue.length >= MAX_BATCH) void this.flush();
     else this.#timer ??= setTimeout(() => void this.flush(), FLUSH_MS);
@@ -98,17 +111,31 @@ export class AuditService implements OnModuleDestroy {
     this.#log.error(`Audit event ${event.id} not written (${why}); event: ${JSON.stringify(event)}`);
   }
 
+  /** Nest's last shutdown phase, after the HTTP server has closed: no request can record an event any more. */
+  onApplicationShutdown(): Promise<void> {
+    return this.drain();
+  }
+
   /**
    * Drains the queue before Elasticsearch is closed: a few flushes with short pauses, since a transient failure puts
-   * events back on the queue. Whatever is still there after that is logged in full, like any event given up on.
+   * events back on the queue. Whatever is still there after that is logged in full, like any event given up on, as is
+   * anything recorded afterwards. Runs once, however often it's called.
    */
-  async onModuleDestroy(): Promise<void> {
+  drain(): Promise<void> {
+    return (this.#draining ??= this.#drain());
+  }
+
+  async #drain(): Promise<void> {
     this.#stopping = true;
     for (let i = 0; i < SHUTDOWN_FLUSHES; i++) {
       if (i) await new Promise((r) => setTimeout(r, SHUTDOWN_BACKOFF_MS * 2 ** (i - 1)));
       await this.flush();
-      if (!this.#queue.length) return;
+      if (!this.#queue.length) {
+        this.#drained = true;
+        return;
+      }
     }
+    this.#drained = true;
     clearTimeout(this.#timer);
     this.#timer = undefined;
     for (const e of this.#queue.splice(0)) this.#giveUp(e, 'still failing at shutdown');

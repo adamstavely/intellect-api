@@ -1,4 +1,4 @@
-import { partnerLabs } from './partner-labs';
+import { partnerLabId, partnerLabs } from './partner-labs';
 
 const paper = (id: string, published: string, partners: string[], initiatedBy: string | null, citations = 0, topic = 't-neuro') => ({
   id,
@@ -52,5 +52,16 @@ describe('partnerLabs', () => {
 
   it('has no labs without joint papers', () => {
     expect(partnerLabs([paper('p2', '2026-03-01', [], null)])).toEqual({ papers: 1, joint: 0, initiatedByUs: 0, initiatedByPartners: 0, labs: [] });
+  });
+
+  it('gives each lab a stable id, distinct for names a slug would merge', () => {
+    const labs = partnerLabs([paper('p5', '2026-05-01', ['A+B Research', 'A B Research'], null), ...papers]).labs;
+    const ids = labs.map((l) => l.id);
+    expect(new Set(ids).size).toBe(labs.length);
+    expect(ids.every((id) => /^lab-[0-9a-f]{16}$/.test(id))).toBe(true);
+    expect(labs.find((l) => l.name === 'NREL')!.id).toBe(partnerLabs(papers).labs.find((l) => l.name === 'NREL')!.id);
+    expect(partnerLabId('A+B Research')).not.toBe(partnerLabId('A B Research'));
+    // Pinned: the frontend keeps these in URLs.
+    expect(partnerLabId('Sandia')).toBe('lab-59f7fbed1a6eaf5d');
   });
 });

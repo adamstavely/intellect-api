@@ -2,6 +2,8 @@ import type { ClientOptions } from '@elastic/elasticsearch';
 
 export interface AppConfig {
   port: number;
+  /** Express's `trust proxy` setting: which proxies' X-Forwarded-For to believe for the client's address. */
+  trustProxy: TrustProxy;
   elasticsearch: ClientOptions;
   audit: AuditConfig;
 }
@@ -31,6 +33,26 @@ export const ES_MAX_RETRIES = 3;
 /** The longest an Elasticsearch write can still be in flight after it was sent, in ms. */
 export function maxWriteDelayMs(es: Pick<ClientOptions, 'requestTimeout' | 'maxRetries'>): number {
   return (es.requestTimeout ?? ES_REQUEST_TIMEOUT_MS) * ((es.maxRetries ?? ES_MAX_RETRIES) + 1);
+}
+
+/** The forms Express's `trust proxy` takes: off/on, a hop count, or addresses, CIDR ranges and names like `loopback`. */
+export type TrustProxy = boolean | number | string[];
+
+/**
+ * Reads `TRUST_PROXY` for Express's `trust proxy` setting, which decides whether `req.ip` (and so the audit trail's
+ * `ip`) comes from X-Forwarded-For. Unset or `false` trusts no proxy: the client is whoever connected. `true` trusts
+ * every hop, so only set it when the app can't be reached except through the proxy. A number trusts that many hops; a
+ * comma-separated list trusts those addresses, CIDR ranges or Express's names (`loopback`, `linklocal`, `uniquelocal`).
+ */
+export function trustProxyOption(env: NodeJS.ProcessEnv = process.env): TrustProxy {
+  const raw = env.TRUST_PROXY?.trim();
+  if (!raw || raw === 'false') return false;
+  if (raw === 'true') return true;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/;
@@ -85,6 +107,7 @@ export function elasticsearchOptions(env: NodeJS.ProcessEnv = process.env): Clie
 
 export default (): AppConfig => ({
   port: Number(process.env.PORT ?? 3000),
+  trustProxy: trustProxyOption(),
   elasticsearch: elasticsearchOptions(),
   audit: auditOptions(),
 });

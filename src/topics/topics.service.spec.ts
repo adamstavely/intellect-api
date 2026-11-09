@@ -12,20 +12,35 @@ const conflict = () => new errors.ResponseError({ statusCode: 409, body: {}, hea
 const answers = <A extends unknown[], R>(f: (...args: A) => R) =>
   jest.fn((...args: A) => new Promise<R>((resolve) => resolve(f(...args))));
 
-/** Just enough of Elasticsearch for the New Topic flow: documents by index and id, created once. */
+/** Just enough of Elasticsearch for the New Topic flow: documents by index and id, created once, with sequence numbers. */
 function fakeEs() {
   const docs = new Map<string, Map<string, object>>();
+  const seqNos = new Map<string, number>();
+  let seq = 0;
   const index = (name: string) => docs.get(name) ?? docs.set(name, new Map()).get(name)!;
+  const put = (i: string, id: string, doc: object) => {
+    index(i).set(id, doc);
+    seqNos.set(`${i}/${id}`, ++seq);
+    return { _seq_no: seq, _primary_term: 1 };
+  };
   const es = {
     mget: answers(({ index: i, ids }: { index: string; ids: string[] }) => ({
       docs: ids.map((id) => (index(i).has(id) ? { _id: id, found: true, _source: index(i).get(id) } : { _id: id, found: false })),
     })),
+    get: answers(({ index: i, id }: { index: string; id: string }) =>
+      index(i).has(id) ? { found: true, _source: index(i).get(id), _seq_no: seqNos.get(`${i}/${id}`), _primary_term: 1 } : { found: false },
+    ),
+    exists: answers(({ index: i, id }: { index: string; id: string }) => index(i).has(id)),
     search: answers(({ index: i, query }: { index: string; query: { term: { idempotencyKey: string } } }) => ({
       hits: { hits: [...index(i).values()].filter((d) => (d as Topic).idempotencyKey === query.term.idempotencyKey).map((d) => ({ _source: d })) },
     })),
     create: answers(({ index: i, id, document }: { index: string; id: string; document: object }) => {
       if (index(i).has(id)) throw conflict();
-      index(i).set(id, document);
+      return put(i, id, document);
+    }),
+    update: answers(({ index: i, id, doc, if_seq_no }: { index: string; id: string; doc: object; if_seq_no: number }) => {
+      if (seqNos.get(`${i}/${id}`) !== if_seq_no) throw conflict();
+      return put(i, id, { ...index(i).get(id), ...doc });
     }),
     bulk: answers(({ operations }: { operations: object[] }) => {
       const items = [];
@@ -34,7 +49,7 @@ function fakeEs() {
         if (index(_index).has(_id)) {
           items.push({ create: { status: 409, error: { type: 'version_conflict_engine_exception' } } });
         } else {
-          index(_index).set(_id, operations[n + 1]);
+          put(_index, _id, operations[n + 1]);
           items.push({ create: { status: 201 } });
         }
       }
@@ -117,5 +132,69 @@ describe('TopicsService.create', () => {
     store.index('topics').set('t-old', { id: 't-old', name: 'Old', leadId: 'mo', teamId: 'team-a', idempotencyKey: 'hv:k-old' });
     await topics.create(chief, { ...base, name: 'Old', questions: ['Q1'] }, 'k-old');
     expect(questions()).toEqual([expect.objectContaining({ id: expect.stringMatching(/^q-[0-9a-f]{8}$/), topicId: 't-old' })]);
+  });
+
+  describe('with an Idempotency-Key, makes one topic per key', () => {
+    /** Commits the next create in `index`, then fails it as if the response had been lost. */
+    const loseResponse = (index: string) => {
+      const create = store.es.create.getMockImplementation()!;
+      let lost = false;
+      store.es.create.mockImplementation((params) => {
+        if (lost || params.index !== index) return create(params);
+        lost = true;
+        return create(params).then(() => Promise.reject(new Error('socket hang up')));
+      });
+    };
+
+    it('when attempts with the same key race', async () => {
+      const results = await Promise.all([1, 2, 3].map(() => topics.create(chief, base, 'k1')));
+      expect(results).toEqual([{ id: 't-lidar-fusion' }, { id: 't-lidar-fusion' }, { id: 't-lidar-fusion' }]);
+      expect([...store.index('topics').keys()]).toEqual(['t-lidar-fusion']);
+      expect(questions().map((q) => q.id)).toEqual(['t-lidar-fusion-q1']);
+    });
+
+    it('and refuses a racing attempt with different details', async () => {
+      const results = await Promise.allSettled([topics.create(chief, base, 'k1'), topics.create(chief, { ...base, bin: 1 }, 'k1')]);
+      expect(results.map((r) => r.status)).toEqual(['fulfilled', 'rejected']);
+      expect((results[1] as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+      expect([...store.index('topics').keys()]).toEqual(['t-lidar-fusion']);
+    });
+
+    it('when the response to the topic write was lost', async () => {
+      loseResponse('topics');
+      await expect(topics.create(chief, base, 'k1')).rejects.toThrow('socket hang up');
+      // Another topic with the name arrives in between; the retry still finds its own.
+      await topics.create(chief, base);
+      expect(store.index('topics').size).toBe(2);
+
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect([...store.index('topics').keys()]).toEqual(['t-lidar-fusion', 't-lidar-fusion-2']);
+      expect(stored('t-lidar-fusion').idempotencyKey).toBe('hv:k1');
+      expect(questions().map((q) => q.id)).toEqual(['t-lidar-fusion-2-q1', 't-lidar-fusion-q1']);
+    });
+
+    it('when the response to the key’s record was lost', async () => {
+      loseResponse('topic-requests');
+      await expect(topics.create(chief, base, 'k1')).rejects.toThrow('socket hang up');
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(store.index('topics').size).toBe(1);
+    });
+
+    it('moving its reservation when another topic takes the id first', async () => {
+      // The reservation is made, then another topic is created under the reserved id before this one is written.
+      const create = store.es.create.getMockImplementation()!;
+      store.es.create.mockImplementation((params) => {
+        if (params.index === 'topics' && params.id === 't-lidar-fusion' && !store.index('topics').has(params.id)) {
+          store.index('topics').set(params.id, { id: params.id, name: 'Lidar Fusion' });
+        }
+        return create(params);
+      });
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion-2' });
+      store.es.create.mockImplementation(create);
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion-2' });
+      expect(stored('t-lidar-fusion-2').idempotencyKey).toBe('hv:k1');
+      expect([...store.index('topic-requests').values()]).toEqual([expect.objectContaining({ key: 'hv:k1', topicId: 't-lidar-fusion-2' })]);
+    });
   });
 });

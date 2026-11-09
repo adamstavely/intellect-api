@@ -180,6 +180,18 @@ describe('writes, brief and reconcile', () => {
         await keyed('not a key!', base).expect(400);
       });
     });
+
+    it('makes one topic when requests with the same Idempotency-Key race', async () => {
+      const body = { ...base, name: 'Radar Mesh', questions: ['Q1'] };
+      const results = await Promise.all([1, 2, 3, 4].map(() => create('hv', body).set('Idempotency-Key', 'k-radar')));
+      expect(results.map((r) => [r.status, r.body.id])).toEqual(Array(4).fill([201, 't-radar-mesh']));
+      await es.indices.refresh({ index: 'topics' });
+      const named = await es.search<Topic>({ index: 'topics', query: { prefix: { id: 't-radar-mesh' } } });
+      expect(named.hits.hits.map((h) => h._id)).toEqual(['t-radar-mesh']);
+      // And the key is spent on that request: a different one under it is refused even when racing.
+      const racing = await Promise.all([create('hv', { ...body, name: 'Radar Mesh 2' }).set('Idempotency-Key', 'k-radar-2'), create('hv', { ...body, name: 'Other' }).set('Idempotency-Key', 'k-radar-2')]);
+      expect(racing.map((r) => r.status).sort()).toEqual([201, 409]);
+    });
   });
 
   describe('GET /search by tag', () => {
@@ -243,6 +255,36 @@ describe('writes, brief and reconcile', () => {
       expect(snap._source).toMatchObject({ healthScore: 15 });
 
       expect((await reconcile(es, TODAY)).drift).toEqual([]);
+    });
+  });
+
+  describe('topic rollups past a thousand records', () => {
+    it('count every gap, so an uncovered critical one past the thousandth still sets the health', async () => {
+      const topic = async () => (await es.get<Topic>({ index: 'topics', id: 't-swarm' }))._source!;
+      const before = await topic();
+      expect(before.health).toBe('healthy');
+      const gaps = Array.from({ length: 1200 }, (_, i) => ({
+        id: `g-many-${String(i).padStart(4, '0')}`,
+        topicId: 't-swarm',
+        text: `Gap ${i}`,
+        // The one that matters is written last.
+        severity: i === 1199 ? 'critical' : 'medium',
+        status: i === 1199 ? 'open' : 'closed',
+        ownerId: 'mo',
+        questionIds: [],
+      }));
+      await es.bulk({ refresh: true, operations: gaps.flatMap((g) => [{ create: { _index: 'gaps', _id: g.id } }, g]) });
+      try {
+        const report = await reconcile(es, TODAY);
+        expect(report.drift).toEqual([expect.objectContaining({ topicId: 't-swarm' })]);
+        const after = await topic();
+        expect(after.stats).toMatchObject({ gaps: before.stats.gaps + 1200, openGaps: before.stats.openGaps + 1 });
+        expect(after.stats.coverage).toBeLessThan(before.stats.coverage);
+        expect(after.healthScore).toBeLessThanOrEqual(before.healthScore - 15);
+      } finally {
+        await es.deleteByQuery({ index: 'gaps', query: { prefix: { id: 'g-many-' } }, refresh: true });
+        await reconcile(es, TODAY);
+      }
     });
   });
 

@@ -49,3 +49,6 @@ export function requestHash(body: CreateTopicDto): string {
   };
   return createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
+
+/** The `topic-requests` id for a user-scoped Idempotency-Key: a hash, so any key fits and none can be guessed from another. */
+export const topicRequestId = (key: string): string => createHash('sha256').update(key).digest('hex');

@@ -1778,8 +1778,8 @@
           "bin": {
             "type": "number",
             "enum": [
-              1,
               3,
+              1,
               2,
               4
             ]
@@ -2040,8 +2040,8 @@
           },
           "bin": {
             "enum": [
-              1,
               3,
+              1,
               2,
               4
             ],
@@ -3507,8 +3507,14 @@
       "PartnerLabDto": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable, unique id for the lab, for URLs (`/partners/:id`): `lab-` plus 16 hex characters of the SHA-256 of its exact\nname. The same lab has the same id on every request and for every user; distinct names never share one.",
+            "example": "lab-59f7fbed1a6eaf5d"
+          },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The lab's name exactly as recorded on its papers."
           },
           "joint": {
             "type": "number",
@@ -3553,6 +3559,7 @@
           }
         },
         "required": [
+          "id",
           "name",
           "joint",
           "initiatedByUs",

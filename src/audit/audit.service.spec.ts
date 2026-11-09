@@ -53,7 +53,7 @@ describe('AuditService', () => {
 
   /** Shuts down as Nest does, letting the drain's pauses pass. */
   const shutDown = async () => {
-    const done = audit.onModuleDestroy();
+    const done = audit.onApplicationShutdown();
     await jest.runAllTimersAsync();
     await done;
   };
@@ -80,5 +80,23 @@ describe('AuditService', () => {
     expect(bulk).toHaveBeenCalledTimes(SHUTDOWN_FLUSHES);
     expect(logged.at(-1)).toMatch(/^Audit event a not written \(still failing at shutdown\); event: \{"id":"a"/);
     expect(jest.getTimerCount()).toBe(0);
+  });
+
+  it('logs in full an event recorded after the drain, rather than writing to a closed client', async () => {
+    await shutDown();
+    audit.record(event('late'));
+    await jest.runAllTimersAsync();
+
+    expect(bulk).not.toHaveBeenCalled();
+    expect(logged).toEqual([expect.stringMatching(/^Audit event late not written \(recorded after the shutdown drain\); event: \{"id":"late"/)]);
+  });
+
+  it('drains once, however often shutdown asks', async () => {
+    bulk.mockResolvedValue({ errors: false, items: [item(201)] });
+    audit.record(event('a'));
+    const done = Promise.all([audit.drain(), audit.onApplicationShutdown()]);
+    await jest.runAllTimersAsync();
+    await done;
+    expect(bulk).toHaveBeenCalledTimes(1);
   });
 });

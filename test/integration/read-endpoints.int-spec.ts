@@ -369,6 +369,19 @@ describe('read endpoints', () => {
     });
   });
 
+  describe('GET /partners', () => {
+    it('gives each lab an id that stays the same between requests and users', async () => {
+      const labs = async (user: string) => (await get('/partners', user)).labs as { id: string; name: string }[];
+      const chief = await labs('hv');
+      expect(chief.length).toBeGreaterThan(0);
+      expect(new Set(chief.map((l) => l.id)).size).toBe(chief.length);
+      expect(chief.every((l) => /^lab-[0-9a-f]{16}$/.test(l.id))).toBe(true);
+      expect(await labs('hv')).toEqual(chief);
+      const byName = new Map(chief.map((l) => [l.name, l.id]));
+      for (const l of await labs('mo')) expect(l.id).toBe(byName.get(l.name));
+    });
+  });
+
   describe('GET /people', () => {
     it('lists everyone for the Chief, with load', async () => {
       const body = (await get('/people')) as unknown as Body[];

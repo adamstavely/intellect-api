@@ -1,7 +1,14 @@
+import { createHash } from 'node:crypto';
 import type { PaperListItemDto } from '../papers/papers.dto';
 import type { PartnerLabDto, PartnerLabsDto, PartnerPaperDto } from './partners.dto';
 
 type Paper = Pick<PaperListItemDto, 'id' | 'title' | 'venue' | 'published' | 'topic' | 'partners' | 'initiatedBy' | 'totals'>;
+
+/**
+ * A partner lab's id: partners are stored on papers by name only, so it's a hash of the exact name – the same on every
+ * request and for every user, and different for names that only differ in spelling ("A+B Research", "A B Research").
+ */
+export const partnerLabId = (name: string): string => `lab-${createHash('sha256').update(name).digest('hex').slice(0, 16)}`;
 
 /** Rolls the caller's papers up per partner lab: what we wrote together, and who started each one. */
 export function partnerLabs(papers: Paper[]): PartnerLabsDto {
@@ -20,6 +27,7 @@ function lab(name: string, ps: Paper[]): PartnerLabDto {
   const count = (by: PartnerPaperDto['initiatedBy']) => papers.filter((p) => p.initiatedBy === by).length;
   const topics = new Map(ps.map((p) => [p.topic.id, p.topic]));
   return {
+    id: partnerLabId(name),
     name,
     joint: papers.length,
     initiatedByUs: count('us'),
