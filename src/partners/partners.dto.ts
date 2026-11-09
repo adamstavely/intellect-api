@@ -19,6 +19,13 @@ export class PartnerPaperDto {
 }
 
 export class PartnerLabDto {
+  /**
+   * Stable, unique id for the lab, for URLs (`/partners/:id`): `lab-` plus 16 hex characters of the SHA-256 of its exact
+   * name. The same lab has the same id on every request and for every user; distinct names never share one.
+   * @example lab-59f7fbed1a6eaf5d
+   */
+  id!: string;
+  /** The lab's name exactly as recorded on its papers. */
   name!: string;
   /** Joint papers written with this lab. */
   joint!: number;

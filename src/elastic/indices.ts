@@ -99,6 +99,13 @@ export const INDICES: IndexDefinition[] = [
     }),
   },
   {
+    // One record per Idempotency-Key used to create a topic, under a hash of the user-scoped key, so the key itself is
+    // the atomic guard: only one request can create the record, and it reserves the topic id every retry reuses.
+    alias: 'topic-requests',
+    version: 1,
+    mappings: strict({ key: keyword, requestHash: { type: 'keyword', index: false }, topicId: keyword, createdAt: timestamp }),
+  },
+  {
     alias: 'questions',
     version: 1,
     mappings: strict({ id: keyword, topicId: keyword, text, status: keyword, ownerId: keyword }),
@@ -235,6 +242,7 @@ export const ALIASES = {
   people: 'people',
   orgUnits: 'org-units',
   topics: 'topics',
+  topicRequests: 'topic-requests',
   questions: 'questions',
   gaps: 'gaps',
   work: 'work',

@@ -49,6 +49,7 @@ export class AuditMiddleware implements NestMiddleware {
         status: res.statusCode,
         startedAt: startedWall,
         finishedAt: startedWall + (performance.now() - startedAt),
+        // The client as Express sees it: X-Forwarded-For counts only from proxies TRUST_PROXY trusts (see configureApp).
         ip: req.ip,
         userAgent: req.headers['user-agent'],
       }),

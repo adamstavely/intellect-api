@@ -105,6 +105,17 @@ export interface Topic {
   idempotencyHash?: string;
 }
 
+/** A New Topic request made with an Idempotency-Key, stored under `topicRequestId(key)`. */
+export interface TopicRequest {
+  /** `<creator id>:<Idempotency-Key>`. */
+  key: string;
+  /** The request's fingerprint (see `requestHash`). */
+  requestHash: string;
+  /** The id reserved for the topic; it moves only if another topic took it before this one was written. */
+  topicId: string;
+  createdAt: string;
+}
+
 export type QuestionStatus = 'open' | 'partially' | 'answered';
 export interface Question {
   id: string;

@@ -5,10 +5,10 @@ import { Clock } from '../common/clock';
 import { getMany, MAX_DOCS, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import type { Citation, Gap, OrgUnit, Paper, Person, Question, Topic, Work } from '../model/types';
+import type { Citation, Gap, OrgUnit, Paper, Person, Question, Topic, TopicRequest, Work } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { TopicRollupService } from '../topic-health/topic-rollup.service';
-import { fiscalYear, PRIORITY_LABEL, requestHash, tidy, topicIdFor } from './create-topic';
+import { fiscalYear, PRIORITY_LABEL, requestHash, tidy, topicIdFor, topicRequestId } from './create-topic';
 import { spineEdges } from './spine';
 import { NO_RECENT_PAPERS, recentPaperCounts } from '../papers/recent-papers';
 import type { CreateTopicDto, SpineDto, TopicDetailDto, TopicsQueryDto, TopicSort, TopicSummaryDto } from './topics.dto';
@@ -28,6 +28,16 @@ const personRef = (p: Pick<Person, 'id' | 'name' | 'initials'>) => ({ id: p.id, 
  * types reads as internal, the default for a new one.
  */
 const shown = ({ idempotencyKey: _key, idempotencyHash: _hash, ...t }: Topic): Topic => ({ ...t, priorityType: t.priorityType ?? 'internal' });
+
+const KEY_REUSED = 'This Idempotency-Key was already used for a different topic, or with different details';
+
+const isConflict = (err: unknown) => err instanceof errors.ResponseError && err.statusCode === 409;
+
+/** The ids a topic with this name may take, in order: `t-<slug>`, then -2, -3… */
+const topicIdCandidates = (name: string): string[] => {
+  const base = topicIdFor(name);
+  return Array.from({ length: 50 }, (_, i) => (i ? `${base}-${i + 1}` : base));
+};
 
 type QuestionIds = (topicId: string, i: number) => string;
 /** The i-th opening question's id: fixed by the topic, so writing the questions again doesn't duplicate them. */
@@ -54,7 +64,7 @@ export class TopicsService {
    * With an idempotency key, a repeat of the request finishes the topic the first attempt created – writing any missing
    * questions and the rollups – rather than creating a second one. That covers a failure the clean-up couldn't undo,
    * and a lost response. A repeat must be the same request (by `requestHash`); different details under the key are a
-   * conflict. Two attempts racing with the same key can still both create; keys are for retries.
+   * conflict. The key is enforced atomically (see `reserve`), so attempts racing with the same key make one topic.
    */
   async create(user: Person, body: CreateTopicDto, idempotencyKey?: string): Promise<TopicDetailDto> {
     if (user.role !== 'chief' && body.leadId !== user.id) throw new ForbiddenException('A PI can only create topics they lead');
@@ -71,16 +81,16 @@ export class TopicsService {
     const key = idempotencyKey ? `${user.id}:${idempotencyKey}` : undefined;
     const texts = tidy(body.questions);
     const hash = key ? requestHash(body) : undefined;
-    const earlier = key ? await this.byIdempotencyKey(key) : undefined;
-    if (earlier) {
+    const legacy = key ? await this.byIdempotencyKey(key) : undefined;
+    if (legacy) {
       // A topic created before request hashes were kept can only be checked on what it stored.
-      const same = earlier.idempotencyHash
-        ? earlier.idempotencyHash === hash
-        : earlier.name === body.name.trim() && earlier.leadId === body.leadId && earlier.teamId === team.id;
-      if (!same) throw new ConflictException('This Idempotency-Key was already used for a different topic, or with different details');
-      await this.writeQuestions(earlier, texts, earlier.idempotencyHash ? questionId : legacyQuestionId);
-      await this.rollups.recompute(earlier.id, today);
-      return this.get(user, earlier.id);
+      const same = legacy.idempotencyHash
+        ? legacy.idempotencyHash === hash
+        : legacy.name === body.name.trim() && legacy.leadId === body.leadId && legacy.teamId === team.id;
+      if (!same) throw new ConflictException(KEY_REUSED);
+      await this.writeQuestions(legacy, texts, legacy.idempotencyHash ? questionId : legacyQuestionId);
+      await this.rollups.recompute(legacy.id, today);
+      return this.get(user, legacy.id);
     }
 
     const topic: Topic = {
@@ -104,7 +114,7 @@ export class TopicsService {
       trend: [],
       ...(key ? { idempotencyKey: key, idempotencyHash: hash } : {}),
     };
-    topic.id = await this.createWithUniqueId(topic);
+    topic.id = key ? await this.createReserved(topic, key, hash!) : await this.createWithUniqueId(topic);
 
     try {
       await this.writeQuestions(topic, texts);
@@ -122,10 +132,87 @@ export class TopicsService {
     return this.get(user, topic.id);
   }
 
-  /** The topic an earlier request with this key created, if any. */
+  /**
+   * A topic created under this key before keys had their own records (`topic-requests`), if any. Topics created since
+   * carry the key too, but their record is what guards it.
+   */
   private async byIdempotencyKey(key: string): Promise<Topic | undefined> {
+    const recorded = await this.es.exists({ index: ALIASES.topicRequests, id: topicRequestId(key) });
+    if (recorded) return undefined;
     const res = await this.es.search<Topic>({ index: ALIASES.topics, size: 1, query: { term: { idempotencyKey: key } } });
     return sources(res)[0];
+  }
+
+  /**
+   * Creates a keyed topic exactly once. The key's record is created first (op_type create, so only one request can),
+   * reserving a topic id; every attempt under the key – the first, a concurrent one, or a retry after a lost response –
+   * then writes the topic at that id with op_type create too. Whichever lands first makes it; the others find it there,
+   * carrying the key, and finish that one. Returns the topic's id.
+   */
+  private async createReserved(topic: Topic, key: string, hash: string): Promise<string> {
+    let { record, seqNo, primaryTerm } = await this.reserve(key, hash, topic.name);
+    for (let n = 0; n < 50; n++) {
+      try {
+        await this.es.create({ index: ALIASES.topics, id: record.topicId, document: { ...topic, id: record.topicId }, refresh: 'wait_for' });
+        return record.topicId;
+      } catch (err) {
+        if (!isConflict(err)) throw err;
+      }
+      const there = (await getMany<Topic>(this.es, ALIASES.topics, [record.topicId], ['idempotencyKey'])).get(record.topicId);
+      // Another attempt under this key wrote it (or this one did, and its response was lost).
+      if (there?.idempotencyKey === key) return record.topicId;
+      // Gone again (a failed attempt's clean-up): try the same id.
+      if (!there) continue;
+      // A different topic took the id between reserving and writing: move the reservation, unless another attempt
+      // under this key already has, in which case follow it.
+      const topicId = await this.freeTopicId(topic.name);
+      try {
+        const res = await this.es.update({
+          index: ALIASES.topicRequests,
+          id: topicRequestId(key),
+          if_seq_no: seqNo,
+          if_primary_term: primaryTerm,
+          doc: { topicId },
+          refresh: 'wait_for',
+        });
+        record = { ...record, topicId };
+        seqNo = res._seq_no!;
+        primaryTerm = res._primary_term!;
+      } catch (err) {
+        if (!isConflict(err)) throw err;
+        ({ record, seqNo, primaryTerm } = await this.reserve(key, hash, topic.name));
+      }
+    }
+    throw new InternalServerErrorException(`Could not reserve an id for "${topic.name}"`);
+  }
+
+  /** The key's record, created with a free topic id if this is the key's first use. A different request under the key is a conflict. */
+  private async reserve(key: string, hash: string, name: string): Promise<{ record: TopicRequest; seqNo: number; primaryTerm: number }> {
+    const id = topicRequestId(key);
+    const existing = await this.es.get<TopicRequest>({ index: ALIASES.topicRequests, id }, { ignore: [404] });
+    let found = existing.found ? existing : undefined;
+    if (!found) {
+      const record: TopicRequest = { key, requestHash: hash, topicId: await this.freeTopicId(name), createdAt: new Date().toISOString() };
+      try {
+        const res = await this.es.create({ index: ALIASES.topicRequests, id, document: record, refresh: 'wait_for' });
+        return { record, seqNo: res._seq_no!, primaryTerm: res._primary_term! };
+      } catch (err) {
+        if (!isConflict(err)) throw err;
+      }
+      // Another request created it first.
+      found = await this.es.get<TopicRequest>({ index: ALIASES.topicRequests, id });
+    }
+    if (found._source!.requestHash !== hash) throw new ConflictException(KEY_REUSED);
+    return { record: found._source!, seqNo: found._seq_no!, primaryTerm: found._primary_term! };
+  }
+
+  /** The first of `t-<slug>`, `t-<slug>-2`… not taken by a topic. Only a candidate: it is claimed by creating the topic. */
+  private async freeTopicId(name: string): Promise<string> {
+    const candidates = topicIdCandidates(name);
+    const taken = await getMany<Topic>(this.es, ALIASES.topics, candidates, ['id']);
+    const id = candidates.find((c) => !taken.has(c));
+    if (!id) throw new BadRequestException(`Too many topics named like "${name}"`);
+    return id;
   }
 
   /**
@@ -165,14 +252,12 @@ export class TopicsService {
 
   /** Creates the topic under `t-<slug>`, adding -2, -3… if the id is taken. */
   private async createWithUniqueId(topic: Topic): Promise<string> {
-    const base = topicIdFor(topic.name);
-    for (let n = 1; n <= 50; n++) {
-      const id = n === 1 ? base : `${base}-${n}`;
+    for (const id of topicIdCandidates(topic.name)) {
       try {
         await this.es.create({ index: ALIASES.topics, id, document: { ...topic, id }, refresh: 'wait_for' });
         return id;
       } catch (err) {
-        if (!(err instanceof errors.ResponseError && err.statusCode === 409)) throw err;
+        if (!isConflict(err)) throw err;
       }
     }
     throw new BadRequestException(`Too many topics named like "${topic.name}"`);

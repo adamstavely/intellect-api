@@ -47,12 +47,13 @@ All scoped to the caller (see Auth below). Full schemas at `/docs`.
 | `GET /papers`, `GET /papers/top?limit=3&period=`, `GET /papers/:id` | Papers list, impact pulse, detail with monthly metrics |
 | `GET /org` | Centers → teams → topic roll-ups |
 | `GET /search?q=` | ⌘K search over topics, gaps, papers and people |
+| `GET /partners` | Partner labs in the caller's scope: joint papers and who started them. Each lab has an `id` (`lab-` + 16 hex of the SHA-256 of its exact name), stable across requests, for `/partners/:id` URLs |
 
 ### Writes and brief
 
 | Endpoint | Notes |
 |---|---|
-| `POST /topics` | New Topic flow: topic plus opening questions. Chief, or a PI creating a topic they lead. Health is computed, never entered. |
+| `POST /topics` | New Topic flow: topic plus opening questions. Chief, or a PI creating a topic they lead. Health is computed, never entered. Send an `Idempotency-Key` header to make retries safe: the key (per user) is recorded in `topic-requests` before the topic is written, so a retry or a concurrent repeat returns the same topic, and the key with different details is a 409. |
 | `PATCH /papers/:id/grade` | `{ "grade": "excellent" }` or `null` to clear. Chief only (403 otherwise). Sets `gradedBy`/`gradedAt` and recomputes the topic's grade roll-up (`stats.grades`). |
 | `GET /brief?period=FY26-Q2` | Directorate Brief: executive summary, at-a-glance, centers scorecard, exposure register, investment vs priority, impact highlights and rule-based decisions. No LLM. |
 
@@ -72,7 +73,9 @@ Every API request is audited, reads included, along with requests refused by aut
 
 The response carries the event's id as `X-Request-Id`.
 
-Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level, as is anything still queued when a shutdown's last few flushes fail. Set a retention ILM policy on `audit-v*` in production.
+**Client address behind a proxy.** `ip` is Express's `req.ip`. By default no proxy is trusted, so it is whoever connected – behind a load balancer, the load balancer – and a client's own `X-Forwarded-For` is ignored. Set `TRUST_PROXY` to the proxies in front of the API to record the real client instead; it takes Express's [`trust proxy`](https://expressjs.com/en/guide/behind-proxies.html) forms: a hop count (`1` for a single load balancer), a comma-separated list of addresses, CIDR ranges and `loopback`/`linklocal`/`uniquelocal`, or `true` (every hop; only when nothing can reach the API except through the proxy).
+
+Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level. On shutdown (SIGTERM), the HTTP server stops taking requests and finishes those in flight first; then the queue is drained, and only then is Elasticsearch closed. Anything still queued when the drain's last few flushes fail is logged in full, as is any event recorded after the drain. Set a retention ILM policy on `audit-v*` in production.
 
 **Forwarding to an external service.** Set `AUDIT_WEBHOOK_URL` to POST the trail to an HTTPS endpoint. Plain http is accepted only on localhost, for development.
 
@@ -99,7 +102,7 @@ Delivery follows a cursor kept in the `audit-cursor` index, which moves only on 
 Elastic is the only datastore (see milestone-1 plan §1 in `scaling-doodle/docs/milestone-1-plan.md`). Index definitions live in [`src/elastic/indices.ts`](src/elastic/indices.ts): each index sits behind an alias (`topics` → `topics-v1`) with a `dynamic: strict` mapping. Adding fields is applied in place by `es:migrate` (`mapping-updated`). For anything else, such as a changed field type, bump the definition's `version` and run `es:migrate`; it creates the new index and reports `needs-reindex`. Reindex, then swap the alias.
 
 - Every record carries `topicId`; each link is stored once, on the child (`gap.questionIds`, `work.gapIds`, `paper.workIds`, `citation.paperId`).
-- Topic rollups (`stats`, `healthScore`, `health`, `trend`, `momentum`) are computed by [`src/topic-health/topic-health.ts`](src/topic-health/topic-health.ts) and stored on the topic. `TopicRollupService.recompute()` refreshes them after a write, using optimistic concurrency.
+- Topic rollups (`stats`, `healthScore`, `health`, `trend`, `momentum`) are computed by [`src/topic-health/topic-health.ts`](src/topic-health/topic-health.ts) and stored on the topic. `TopicRollupService.recompute()` refreshes them after a write, using optimistic concurrency. It reads every one of the topic's records, page by page through a point in time, so nothing is cut off at a result window.
 - `paper-metrics` is filled through the `MetricsSource` interface; `SeedMetricsSource` serves the prototype's figures until the internal metrics API is integrated.
 
 ### Seed
