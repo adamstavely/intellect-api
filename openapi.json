@@ -395,7 +395,7 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "1–10,000 (every gap the search returns), default 20. A full review asks for the most.",
+            "description": "1–10,000, default 20: how many of the ranked gaps to return. The ranking is over every matching gap.",
             "schema": {
               "minimum": 1,
               "maximum": 10000,
@@ -440,6 +440,14 @@
         ],
         "responses": {
           "200": {
+            "headers": {
+              "X-Total-Count": {
+                "description": "How many gaps matched, before the list was cut to `limit`.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
             "description": "",
             "content": {
               "application/json": {
@@ -458,7 +466,7 @@
             "intellect-user": []
           }
         ],
-        "summary": "Gaps in the caller's scope. The dashboard's \"Gaps needing attention\" is `attention=true&limit=5`.",
+        "summary": "Gaps in the caller's scope, most in need of attention first, cut to `limit`. The dashboard's \"Gaps needing\nattention\" is `attention=true&limit=5`.",
         "tags": [
           "gaps"
         ]
@@ -1141,9 +1149,20 @@
       "PersonSummaryDto": {
         "type": "object",
         "properties": {
+          "allocations": {
+            "description": "Allocations on topics in the caller's scope only (all of them for the Chief). Work elsewhere is counted in\n`otherFte`, never listed.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          },
           "load": {
             "type": "number",
-            "description": "Total allocated FTE."
+            "description": "Total allocated FTE, across every topic, in scope or not."
+          },
+          "otherFte": {
+            "type": "number",
+            "description": "FTE on topics outside the caller's scope, as one total; 0 for the Chief."
           },
           "overCapacity": {
             "type": "boolean",
@@ -1176,12 +1195,6 @@
             "nullable": true,
             "description": "Team org-unit id; null for the directorate."
           },
-          "allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AllocationDto"
-            }
-          },
           "capacity": {
             "type": "number"
           },
@@ -1196,7 +1209,9 @@
           }
         },
         "required": [
+          "allocations",
           "load",
+          "otherFte",
           "overCapacity",
           "id",
           "name",
@@ -1204,7 +1219,6 @@
           "role",
           "title",
           "team",
-          "allocations",
           "capacity",
           "started",
           "ended"
@@ -1243,9 +1257,20 @@
       "PersonDetailDto": {
         "type": "object",
         "properties": {
+          "allocations": {
+            "description": "Allocations on topics in the caller's scope only (all of them for the Chief). Work elsewhere is counted in\n`otherFte`, never listed.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AllocationDto"
+            }
+          },
           "load": {
             "type": "number",
-            "description": "Total allocated FTE."
+            "description": "Total allocated FTE, across every topic, in scope or not."
+          },
+          "otherFte": {
+            "type": "number",
+            "description": "FTE on topics outside the caller's scope, as one total; 0 for the Chief."
           },
           "overCapacity": {
             "type": "boolean",
@@ -1278,12 +1303,6 @@
             "nullable": true,
             "description": "Team org-unit id; null for the directorate."
           },
-          "allocations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AllocationDto"
-            }
-          },
           "capacity": {
             "type": "number"
           },
@@ -1305,7 +1324,9 @@
           }
         },
         "required": [
+          "allocations",
           "load",
+          "otherFte",
           "overCapacity",
           "id",
           "name",
@@ -1313,7 +1334,6 @@
           "role",
           "title",
           "team",
-          "allocations",
           "capacity",
           "started",
           "ended",

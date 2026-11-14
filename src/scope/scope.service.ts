@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
+import { readAll } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Person } from '../model/types';
@@ -18,13 +19,8 @@ export class ScopeService {
   async topicScope(user: Person): Promise<TopicScope> {
     if (user.role === 'chief') return { all: true };
 
-    const led = await this.es.search<{ id: string }>({
-      index: ALIASES.topics,
-      size: 10_000,
-      _source: ['id'],
-      query: { term: { leadId: user.id } },
-    });
-    const ids = new Set(led.hits.hits.map((h) => h._source!.id));
+    const led = await readAll<{ id: string }>(this.es, ALIASES.topics, { _source: ['id'], query: { term: { leadId: user.id } } });
+    const ids = new Set(led.map((t) => t.id));
     for (const a of user.allocations) if (a.fte > 0) ids.add(a.topicId);
     return { all: false, topicIds: [...ids].sort() };
   }

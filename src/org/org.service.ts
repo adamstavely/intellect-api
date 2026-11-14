@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { getMany, MAX_DOCS, sources } from '../common/es';
+import { getMany, readAll } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { OrgUnit, Person, Topic } from '../model/types';
@@ -21,17 +21,13 @@ export class OrgService {
   /** Centers → teams → topics with roll-ups. Outside the Chief's view, units with no visible topics are left out. */
   async tree(user: Person): Promise<OrgDto> {
     const scope = await this.scope.topicScope(user);
-    const [unitsRes, topicsRes] = await Promise.all([
-      this.es.search<OrgUnit>({ index: ALIASES.orgUnits, size: MAX_DOCS, sort: [{ 'name.keyword': 'asc' }] }),
-      this.es.search<Topic>({
-        index: ALIASES.topics,
-        size: MAX_DOCS,
+    const [units, topics] = await Promise.all([
+      readAll<OrgUnit>(this.es, ALIASES.orgUnits, { sort: [{ 'name.keyword': 'asc' }] }),
+      readAll<Topic>(this.es, ALIASES.topics, {
         query: { bool: { filter: [ScopeService.toFilter(scope, 'id')] } },
         sort: [{ healthScore: 'asc' }, { id: 'asc' }],
       }),
     ]);
-    const units = sources(unitsRes);
-    const topics = sources(topicsRes);
     const leads = await getMany<Person>(this.es, ALIASES.people, units.map((u) => u.leadId).filter((x): x is string => !!x), ['id', 'name', 'initials']);
     const lead = (id: string | null) => {
       const p = id ? leads.get(id) : undefined;

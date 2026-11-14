@@ -4,7 +4,7 @@ import { Clock } from '../common/clock';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import { MAX_DOCS, sources } from '../common/es';
+import { readAll } from '../common/es';
 import type { Paper, Person } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { trailingMonths } from '../topic-health/topic-health';
@@ -122,15 +122,12 @@ export class PortfolioService {
     const forecastMonths = nextMonths(months[months.length - 1], q.horizon ?? 6);
     const scope = await this.scope.topicScope(user);
     const [papers, people] = await Promise.all([
-      this.es.search<Pick<Paper, 'published'>>({
-        index: ALIASES.papers,
-        size: MAX_DOCS,
+      // Every paper and person in scope: the series count all of them.
+      readAll<Pick<Paper, 'published'>>(this.es, ALIASES.papers, {
         _source: ['published'],
         query: { bool: { filter: [ScopeService.toFilter(scope, 'topicId')] } },
       }),
-      this.es.search<Pick<Person, 'started' | 'ended'>>({
-        index: ALIASES.people,
-        size: MAX_DOCS,
+      readAll<Pick<Person, 'started' | 'ended'>>(this.es, ALIASES.people, {
         _source: ['started', 'ended'],
         query: { bool: { filter: [ScopeService.peopleFilter(scope, user)] } },
       }),
@@ -143,8 +140,8 @@ export class PortfolioService {
     return {
       months,
       forecastMonths,
-      papers: series(cumulativeByMonth(sources(papers).map((p) => p.published), months, today), true),
-      people: series(headcountByMonth(sources(people).filter((p) => p.started), months, today), false),
+      papers: series(cumulativeByMonth(papers.map((p) => p.published), months, today), true),
+      people: series(headcountByMonth(people.filter((p) => p.started), months, today), false),
     };
   }
 }

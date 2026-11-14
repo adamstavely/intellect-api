@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
-import { getMany, MAX_DOCS, sources } from '../common/es';
+import { getMany, readAll } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import { GapsService } from '../gaps/gaps.service';
@@ -34,18 +34,16 @@ export class BriefService {
     const topicScope = await this.scope.topicScope(user);
     const byTopicId = ScopeService.toFilter(topicScope, 'topicId');
 
-    const [atAGlance, org, attention, impact, people, topicsRes, workRes] = await Promise.all([
+    // Every topic, work item and gap needing attention, however many: the counts and decisions are over all of them.
+    const [atAGlance, org, { gaps: attention }, impact, people, topics, work] = await Promise.all([
       this.portfolio.summary(user, { period: q.period }),
       this.org.tree(user),
-      // Every gap needing attention: the exposure count has to be the whole count.
-      this.gaps.list(user, { attention: true, limit: MAX_DOCS }),
+      this.gaps.ranked(user, { attention: true }),
       this.papers.top(user, { period: q.period, limit: 3 }),
       this.people.list(user),
-      this.es.search<Topic>({ index: ALIASES.topics, size: MAX_DOCS, query: { bool: { filter: [ScopeService.toFilter(topicScope, 'id')] } } }),
-      this.es.search<Work>({ index: ALIASES.work, size: MAX_DOCS, query: { bool: { filter: [byTopicId] } }, sort: [{ due: 'asc' }] }),
+      readAll<Topic>(this.es, ALIASES.topics, { query: { bool: { filter: [ScopeService.toFilter(topicScope, 'id')] } } }),
+      readAll<Work>(this.es, ALIASES.work, { query: { bool: { filter: [byTopicId] } }, sort: [{ due: 'asc' }] }),
     ]);
-    const topics = sources(topicsRes);
-    const work = sources(workRes);
     const blockedWork = work.filter((w) => w.status === 'blocked');
     const gapsById = await getMany<Gap>(this.es, ALIASES.gaps, blockedWork.flatMap((w) => w.gapIds));
     const exposure = attention.filter((g) => g.severity === 'critical' || g.severity === 'high');

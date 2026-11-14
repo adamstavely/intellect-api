@@ -10,7 +10,7 @@ export class GapsQueryDto {
   @IsBoolean()
   attention?: boolean;
 
-  /** 1–10,000 (every gap the search returns), default 20. A full review asks for the most. */
+  /** 1–10,000, default 20: how many of the ranked gaps to return. The ranking is over every matching gap. */
   @IsOptional()
   @Type(() => Number)
   @IsInt()

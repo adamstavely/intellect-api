@@ -38,8 +38,8 @@ function fakeEs() {
       if (index(i).has(id)) throw conflict();
       return put(i, id, document);
     }),
-    update: answers(({ index: i, id, doc, if_seq_no }: { index: string; id: string; doc: object; if_seq_no: number }) => {
-      if (seqNos.get(`${i}/${id}`) !== if_seq_no) throw conflict();
+    update: answers(({ index: i, id, doc, if_seq_no }: { index: string; id: string; doc: object; if_seq_no?: number }) => {
+      if (!index(i).has(id) || (if_seq_no !== undefined && seqNos.get(`${i}/${id}`) !== if_seq_no)) throw conflict();
       return put(i, id, { ...index(i).get(id), ...doc });
     }),
     bulk: answers(({ operations }: { operations: object[] }) => {
@@ -100,8 +100,10 @@ describe('TopicsService.create', () => {
   });
 
   it('accepts a replay of the same request, however it was spelled, and finishes that topic', async () => {
-    await topics.create(chief, base, 'k1');
-    store.index('questions').clear(); // as if the first attempt's questions never landed
+    // The first attempt's questions never land.
+    store.es.bulk.mockRejectedValueOnce(new Error('connection reset'));
+    await expect(topics.create(chief, base, 'k1')).rejects.toThrow(InternalServerErrorException);
+    expect(questions()).toEqual([]);
 
     const replay = { ...base, name: '  Lidar Fusion ', priorityType: 'internal' as const, priorityLabel: 'Core', questions: ['Q1 ', 'Q1'] };
     await expect(topics.create(chief, replay, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
@@ -162,7 +164,7 @@ describe('TopicsService.create', () => {
 
     it('when the response to the topic write was lost', async () => {
       loseResponse('topics');
-      await expect(topics.create(chief, base, 'k1')).rejects.toThrow('socket hang up');
+      await expect(topics.create(chief, base, 'k1')).rejects.toThrow(InternalServerErrorException);
       // Another topic with the name arrives in between; the retry still finds its own.
       await topics.create(chief, base);
       expect(store.index('topics').size).toBe(2);
@@ -178,6 +180,78 @@ describe('TopicsService.create', () => {
       await expect(topics.create(chief, base, 'k1')).rejects.toThrow('socket hang up');
       await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
       await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(store.index('topics').size).toBe(1);
+    });
+
+    const request = () => [...store.index('topic-requests').values()][0] as { status?: string; topicId: string };
+
+    it('marks the key’s record completed once the topic is finished, and a repeat writes nothing', async () => {
+      await topics.create(chief, base, 'k1');
+      expect(request()).toMatchObject({ status: 'completed', topicId: 't-lidar-fusion' });
+      const writes = store.es.create.mock.calls.length + store.es.bulk.mock.calls.length;
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(store.es.create.mock.calls.length + store.es.bulk.mock.calls.length).toBe(writes);
+    });
+
+    it('when a failed attempt races a retry that succeeds: the topic and its questions survive', async () => {
+      // Attempt A stalls in its questions write, which then times out without landing.
+      const bulk = store.es.bulk.getMockImplementation()!;
+      let timeOut!: () => void;
+      const stalled = new Promise<never>((_, reject) => (timeOut = () => reject(new errors.TimeoutError('Request timed out'))));
+      store.es.bulk.mockImplementationOnce(() => stalled);
+      store.es.bulk.mockImplementation(bulk);
+      const a = topics.create(chief, { ...base, questions: ['Q1', 'Q2'] }, 'k1');
+      await new Promise((r) => setImmediate(r));
+      expect(store.es.bulk).toHaveBeenCalledTimes(1);
+
+      // Retry B, same key and body, finishes the topic.
+      await expect(topics.create(chief, { ...base, questions: ['Q1', 'Q2'] }, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(request().status).toBe('completed');
+
+      timeOut();
+      await expect(a).rejects.toThrow(InternalServerErrorException);
+      expect(store.es.deleteByQuery).not.toHaveBeenCalled();
+      expect(store.es.delete).not.toHaveBeenCalled();
+      expect([...store.index('topics').keys()]).toEqual(['t-lidar-fusion']);
+      expect(questions().map((q) => q.id)).toEqual(['t-lidar-fusion-q1', 't-lidar-fusion-q2']);
+      expect(request().status).toBe('completed');
+    });
+
+    it('when the questions write committed but its response timed out: the record stays pending and a retry completes it', async () => {
+      const bulk = store.es.bulk.getMockImplementation()!;
+      store.es.bulk.mockImplementationOnce((params) => bulk(params).then(() => Promise.reject(new errors.TimeoutError('Request timed out'))));
+      await expect(topics.create(chief, { ...base, questions: ['Q1', 'Q2'] }, 'k1')).rejects.toThrow(
+        't-lidar-fusion; retry with the same Idempotency-Key to finish it',
+      );
+      expect(request().status).toBe('pending');
+      expect(store.index('topics').has('t-lidar-fusion')).toBe(true);
+      expect(store.es.deleteByQuery).not.toHaveBeenCalled();
+
+      await expect(topics.create(chief, { ...base, questions: ['Q1', 'Q2'] }, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(request()).toMatchObject({ status: 'completed', topicId: 't-lidar-fusion' });
+      expect([...store.index('topics').keys()]).toEqual(['t-lidar-fusion']);
+      expect(questions().map((q) => q.id)).toEqual(['t-lidar-fusion-q1', 't-lidar-fusion-q2']);
+    });
+
+    it('when the rollups fail: nothing is removed, and a retry finishes it', async () => {
+      const recompute = (topics as unknown as { rollups: { recompute: jest.Mock } }).rollups.recompute;
+      recompute.mockRejectedValueOnce(new Error('es_rejected_execution_exception'));
+      await expect(topics.create(chief, base, 'k1')).rejects.toThrow(InternalServerErrorException);
+      expect(request().status).toBe('pending');
+      expect(questions()).toHaveLength(1);
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(request().status).toBe('completed');
+    });
+
+    it('finishes a record from before completion was tracked', async () => {
+      await topics.create(chief, base, 'k1');
+      const [id, record] = [...store.index('topic-requests')][0];
+      const old = { ...(record as Record<string, unknown>) };
+      delete old.status;
+      delete old.completedAt;
+      store.index('topic-requests').set(id, old);
+      await expect(topics.create(chief, base, 'k1')).resolves.toEqual({ id: 't-lidar-fusion' });
+      expect(request().status).toBe('completed');
       expect(store.index('topics').size).toBe(1);
     });
 

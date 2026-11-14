@@ -8,7 +8,7 @@ import { Clock } from '../../src/common/clock';
 import { ES_CLIENT } from '../../src/elastic/elastic.module';
 import { INDICES } from '../../src/elastic/indices';
 import { migrate } from '../../src/elastic/migrate';
-import type { Question, Topic } from '../../src/model/types';
+import type { Paper, Question, Topic, Work } from '../../src/model/types';
 import { seed } from '../../src/seed/seed';
 import { reconcile } from '../../src/topic-health/reconcile';
 import { resetCluster, testClient } from './es';
@@ -152,23 +152,55 @@ describe('writes, brief and reconcile', () => {
         expect(await exists('t-thermal-imaging')).toBe(false);
       });
 
-      it('finishes the topic on a retry with the same Idempotency-Key, without a duplicate', async () => {
+      const requestStatus = async (key: string) => {
+        const res = await es.search<{ key: string; status?: string }>({ index: 'topic-requests', query: { term: { key: `hv:${key}` } } });
+        return res.hits.hits[0]?._source?.status;
+      };
+
+      it('keeps a keyed topic when its questions fail, and finishes it on a retry with the same Idempotency-Key', async () => {
         const body = { ...base, name: 'Lidar Fusion', questions: ['Q1', 'Q2'] };
-        // The write fails and so does the clean-up, leaving the topic behind.
         failQuestionsOnce();
-        jest.spyOn(appEs(), 'deleteByQuery').mockRejectedValueOnce(new Error('connection reset'));
+        const deleteByQuery = jest.spyOn(appEs(), 'deleteByQuery');
         const failed = await keyed('k-lidar-1', body).expect(500);
         expect(failed.body.message).toMatch(/t-lidar-fusion; retry with the same Idempotency-Key/);
+        // Another attempt under the key may have finished it, so nothing is removed.
+        expect(deleteByQuery).not.toHaveBeenCalled();
         expect(await exists('t-lidar-fusion')).toBe(true);
+        expect(await requestStatus('k-lidar-1')).toBe('pending');
         jest.restoreAllMocks();
 
         const retried = await keyed('k-lidar-1', body).expect(201);
         expect(retried.body).toMatchObject({ id: 't-lidar-fusion', stats: { questions: 2 } });
         expect(retried.body).not.toHaveProperty('idempotencyKey');
+        expect(await requestStatus('k-lidar-1')).toBe('completed');
         // A repeat after success returns the same topic and writes nothing new.
         expect((await keyed('k-lidar-1', body).expect(201)).body.id).toBe('t-lidar-fusion');
         expect(await questionsOf('t-lidar-fusion')).toEqual(['Q1', 'Q2']);
         expect(await exists('t-lidar-fusion-2')).toBe(false);
+      });
+
+      it('finishes the same topic on a retry when the questions were written but the response timed out', async () => {
+        const body = { ...base, name: 'Sonar Array', questions: ['Q1', 'Q2'] };
+        const client = appEs();
+        const bulk = client.bulk.bind(client);
+        let timedOut = false;
+        jest.spyOn(client, 'bulk').mockImplementation(((params: { operations?: { create?: { _index?: string } }[] }) => {
+          if (!timedOut && params.operations?.[0]?.create?._index === 'questions') {
+            timedOut = true;
+            return bulk(params as never).then(() => Promise.reject(new Error('Request timed out')));
+          }
+          return bulk(params);
+        }) as never);
+        await keyed('k-sonar', body).expect(500);
+        expect(await requestStatus('k-sonar')).toBe('pending');
+        expect(await questionsOf('t-sonar-array')).toEqual(['Q1', 'Q2']);
+        jest.restoreAllMocks();
+
+        const retried = await keyed('k-sonar', body).expect(201);
+        expect(retried.body).toMatchObject({ id: 't-sonar-array', stats: { questions: 2 } });
+        expect(await requestStatus('k-sonar')).toBe('completed');
+        expect(await questionsOf('t-sonar-array')).toEqual(['Q1', 'Q2']);
+        expect(await exists('t-sonar-array-2')).toBe(false);
       });
 
       it('refuses a key reused for a different topic or with different details, and keeps keys per user', async () => {
@@ -284,6 +316,82 @@ describe('writes, brief and reconcile', () => {
       } finally {
         await es.deleteByQuery({ index: 'gaps', query: { prefix: { id: 'g-many-' } }, refresh: true });
         await reconcile(es, TODAY);
+      }
+    });
+  });
+
+  describe('GET /people for someone also on a topic outside the caller’s scope', () => {
+    it('shows a PI only the shared topic’s allocation, the rest as one total, and the Chief everything', async () => {
+      const jt = (await es.get<{ allocations: { topicId: string; fte: number }[] }>({ index: 'people', id: 'jt' }))._source!;
+      await es.update({ index: 'people', id: 'jt', doc: { allocations: [...jt.allocations, { topicId: 't-carbon', fte: 0.2 }] }, refresh: 'wait_for' });
+      try {
+        const people = (user: string) => http().get('/people').set('X-Intellect-User', user).expect(200);
+        const detail = (user: string) => http().get('/people/jt').set('X-Intellect-User', user).expect(200);
+
+        const listed = (await people('mo')).body.find((p: { id: string }) => p.id === 'jt');
+        const shown = (await detail('mo')).body;
+        for (const p of [listed, shown]) {
+          expect(p.allocations.map((a: { topicId: string }) => a.topicId)).toEqual(['t-neuro', 't-advml']);
+          expect(p).toMatchObject({ load: 1.2, otherFte: 0.2, overCapacity: true });
+          expect(JSON.stringify(p)).not.toContain('t-carbon');
+        }
+        expect(shown.topics.map((t: { topic: { id: string } }) => t.topic.id)).toEqual(['t-neuro', 't-advml']);
+
+        const chiefListed = (await people('hv')).body.find((p: { id: string }) => p.id === 'jt');
+        const chiefShown = (await detail('hv')).body;
+        for (const p of [chiefListed, chiefShown]) {
+          expect(p.allocations.map((a: { topicId: string }) => a.topicId)).toEqual(['t-neuro', 't-advml', 't-carbon']);
+          expect(p).toMatchObject({ load: 1.2, otherFte: 0 });
+        }
+      } finally {
+        await es.update({ index: 'people', id: 'jt', doc: { allocations: jt.allocations }, refresh: 'wait_for' });
+      }
+    });
+  });
+
+  describe('reads past one result window', () => {
+    const bulkCreate = async (index: string, docs: { id: string }[]) => {
+      const res = await es.bulk({ refresh: true, operations: docs.flatMap((d) => [{ create: { _index: index, _id: d.id } }, d]) });
+      expect(res.errors).toBe(false);
+    };
+
+    it('counts a critical gap covered by the 10,001st work item in flight as covered', async () => {
+      const attention = await http().get('/gaps?attention=true&severity=critical&limit=1').set('X-Intellect-User', 'hv').expect(200);
+      const gap = attention.body[0] as { id: string; topicId: string };
+      expect(gap).toBeDefined();
+      const sample = (await es.search<Work>({ index: 'work', size: 1 })).hits.hits[0]._source!;
+      // 10,000 items in flight on other gaps, then the one that covers it.
+      const work = Array.from({ length: 10_001 }, (_, i) => ({
+        ...sample,
+        id: `w-many-${String(i).padStart(5, '0')}`,
+        topicId: gap.topicId,
+        gapIds: i === 10_000 ? [gap.id] : [`g-elsewhere-${i}`],
+        status: i === 10_000 ? ('active' as const) : ('blocked' as const),
+      }));
+      await bulkCreate('work', work);
+      try {
+        const res = await http().get('/gaps?attention=true&limit=10000').set('X-Intellect-User', 'hv').expect(200);
+        expect(res.body.map((g: { id: string }) => g.id)).not.toContain(gap.id);
+        expect(Number(res.headers['x-total-count'])).toBe(res.body.length);
+        const detail = await http().get(`/gaps?topicId=${gap.topicId}&limit=10000`).set('X-Intellect-User', 'hv').expect(200);
+        expect(detail.body.find((g: { id: string }) => g.id === gap.id)).toMatchObject({ covered: true, activeWork: 1 });
+      } finally {
+        await es.deleteByQuery({ index: 'work', query: { prefix: { id: 'w-many-' } }, refresh: true });
+      }
+    });
+
+    it('ranks papers by reads over all of them, past the newest 10,000', async () => {
+      const before = (await http().get('/papers?sort=reads').set('X-Intellect-User', 'hv').expect(200)).body as { id: string; published: string }[];
+      const mostRead = before[0];
+      const sample = (await es.get<Paper>({ index: 'papers', id: mostRead.id }))._source!;
+      const newer = Array.from({ length: 10_001 }, (_, i) => ({ ...sample, id: `p-many-${String(i).padStart(5, '0')}`, published: '2026-11-01', partners: [], initiatedBy: null }));
+      await bulkCreate('papers', newer);
+      try {
+        const after = (await http().get('/papers?sort=reads').set('X-Intellect-User', 'hv').expect(200)).body as { id: string }[];
+        expect(after).toHaveLength(before.length + 10_001);
+        expect(after[0].id).toBe(mostRead.id);
+      } finally {
+        await es.deleteByQuery({ index: 'papers', query: { prefix: { id: 'p-many-' } }, refresh: true });
       }
     });
   });
