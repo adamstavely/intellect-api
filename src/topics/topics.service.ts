@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { createHash } from 'node:crypto';
 import { Client, errors, estypes } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { getMany, readAll, sources } from '../common/es';
+import { getMany, readAll, search, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Citation, Gap, OrgUnit, Paper, Person, Question, Topic, TopicRequest, Work } from '../model/types';
@@ -175,7 +175,7 @@ export class TopicsService {
   private async byIdempotencyKey(key: string): Promise<Topic | undefined> {
     const recorded = await this.es.exists({ index: ALIASES.topicRequests, id: topicRequestId(key) });
     if (recorded) return undefined;
-    const res = await this.es.search<Topic>({ index: ALIASES.topics, size: 1, query: { term: { idempotencyKey: key } } });
+    const res = await search<Topic>(this.es, { index: ALIASES.topics, size: 1, query: { term: { idempotencyKey: key } } });
     return sources(res)[0];
   }
 

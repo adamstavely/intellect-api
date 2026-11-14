@@ -34,7 +34,7 @@ describe('audit events', () => {
       query: {},
       body: { grade: 'excellent' },
       bodyTruncated: false,
-      outcome: { status: 200, ok: true },
+      outcome: { status: 200, ok: true, delivery: 'completed' },
       durationMs: 42,
       ip: '10.0.0.5',
       userAgent: 'test',
@@ -46,7 +46,7 @@ describe('audit events', () => {
     expect(e.actor).toEqual({ id: 'nobody', name: null, role: null, authenticated: false });
     expect(e.action).toBe('GET /papers/:id/grade');
     expect(e.body).toBeNull();
-    expect(e.outcome).toEqual({ status: 401, ok: false });
+    expect(e.outcome).toEqual({ status: 401, ok: false, delivery: 'completed' });
   });
 
   it('names unmatched paths by path', () => {
@@ -86,7 +86,7 @@ describe('audit events', () => {
 
 describe('audit config', () => {
   it('keeps events in Elasticsearch only without a webhook', () => {
-    expect(auditOptions({})).toEqual({ webhookUrl: undefined, webhookSecret: undefined, intervalMs: 5000, batchSize: 200, timeoutMs: 10_000, settleMs: 30_000 });
+    expect(auditOptions({})).toEqual({ webhookUrl: undefined, webhookSecret: undefined, intervalMs: 5000, batchSize: 200, timeoutMs: 10_000, settleMs: 30_000, shutdownTimeoutMs: 10_000, maxQueue: 10_000 });
   });
 
   it('takes https anywhere, http only on localhost', () => {

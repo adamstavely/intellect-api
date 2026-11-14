@@ -4,7 +4,7 @@ import { Clock } from '../common/clock';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
-import { readAll } from '../common/es';
+import { count, readAll, search } from '../common/es';
 import type { Paper, Person } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import { trailingMonths } from '../topic-health/topic-health';
@@ -32,7 +32,7 @@ export class PortfolioService {
     const trendMonths = trailingMonths(period.to, 12);
 
     const [topics, questions, work, papers, reads, trend] = await Promise.all([
-      this.es.search({
+      search(this.es, {
         index: ALIASES.topics,
         size: 0,
         track_total_hits: true,
@@ -48,9 +48,9 @@ export class PortfolioService {
           fte: { sum: { field: 'stats.fte' } },
         },
       }),
-      this.es.count({ index: ALIASES.questions, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'answered' } }] } } }),
-      this.es.count({ index: ALIASES.work, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'complete' } }] } } }),
-      this.es.search({
+      count(this.es, { index: ALIASES.questions, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'answered' } }] } } }),
+      count(this.es, { index: ALIASES.work, query: { bool: { filter: [byTopicId], must_not: [{ term: { status: 'complete' } }] } } }),
+      search(this.es, {
         index: ALIASES.papers,
         size: 0,
         track_total_hits: true,
@@ -58,13 +58,13 @@ export class PortfolioService {
         // An empty partners list isn't indexed, so `exists` matches exactly the joint papers.
         aggs: { joint: { filter: { exists: { field: 'partners' } } } },
       }),
-      this.es.search({
+      search(this.es, {
         index: ALIASES.paperMetrics,
         size: 0,
         query: { bool: { filter: [byTopicId, { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },
         aggs: { views: { sum: { field: 'views' } }, downloads: { sum: { field: 'downloads' } }, citations: { sum: { field: 'citations' } } },
       }),
-      this.es.search({
+      search(this.es, {
         index: ALIASES.paperMetrics,
         size: 0,
         query: { bool: { filter: [byTopicId, { range: { month: { gte: trendMonths[0], lte: trendMonths[11] } } }] } },

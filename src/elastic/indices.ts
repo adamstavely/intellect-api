@@ -214,7 +214,8 @@ export const INDICES: IndexDefinition[] = [
       // Kept as given, not indexed: it's evidence, not something to search on.
       body: { type: 'object', enabled: false },
       bodyTruncated: { type: 'boolean' },
-      outcome: object({ status: integer, ok: { type: 'boolean' } }),
+      // delivery: completed (the response went out) or aborted (the client left first; status is the handler's, or null).
+      outcome: object({ status: integer, ok: { type: 'boolean' }, delivery: keyword }),
       durationMs: integer,
       ip: keyword,
       userAgent: { type: 'keyword', ignore_above: 512 },

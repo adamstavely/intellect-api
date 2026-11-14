@@ -41,7 +41,7 @@ function fakeEs() {
   return { es, audit };
 }
 
-const config: AuditConfig = { webhookUrl: 'https://siem.example.com/hook', webhookSecret: undefined, intervalMs: 5000, batchSize: 100, timeoutMs: 1000, settleMs: 30_000 };
+const config: AuditConfig = { webhookUrl: 'https://siem.example.com/hook', webhookSecret: undefined, intervalMs: 5000, batchSize: 100, timeoutMs: 1000, settleMs: 30_000, shutdownTimeoutMs: 10_000, maxQueue: 10_000 };
 
 describe('AuditForwarder', () => {
   let store: ReturnType<typeof fakeEs>;
