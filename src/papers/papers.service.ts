@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { getMany, MAX_DOCS, sources } from '../common/es';
+import { chunks, getMany, readAll } from '../common/es';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
@@ -77,14 +77,11 @@ export class PapersService {
     if (q.grade === 'ungraded') mustNot.push({ exists: { field: 'grade' } });
     else if (q.grade) filter.push({ term: { grade: q.grade } });
 
-    const papers = sources(
-      await this.es.search<Paper>({
-        index: ALIASES.papers,
-        size: MAX_DOCS,
-        query: { bool: { filter, must_not: mustNot } },
-        sort: [{ published: 'desc' }, { id: 'asc' }],
-      }),
-    );
+    // Every matching paper, newest first; ranking by reads is then over all of them, not one window of the newest.
+    const papers = await readAll<Paper>(this.es, ALIASES.papers, {
+      query: { bool: { filter, must_not: mustNot } },
+      sort: [{ published: 'desc' }, { id: 'asc' }],
+    });
     const ids = papers.map((p) => p.id);
     const items = await this.decorate(papers, await this.totals(ids));
     if (q.sort === 'reads') items.sort((a, b) => b.totals.views - a.totals.views || a.id.localeCompare(b.id));
@@ -94,16 +91,27 @@ export class PapersService {
   }
 
   /** Each paper's metrics summed over the period's months. */
-  private async periodTotals(paperIds: string[], period: { fromMonth: string; toMonth: string }): Promise<Map<string, MetricTotalsDto>> {
-    if (!paperIds.length) return new Map();
-    const res = await this.es.search({
-      index: ALIASES.paperMetrics,
-      size: 0,
-      query: { bool: { filter: [{ terms: { paperId: paperIds } }, { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },
-      aggs: { papers: { terms: { field: 'paperId', size: paperIds.length }, aggs: TOTALS_AGGS } },
-    });
-    const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
-    return new Map(buckets.map((b) => [b.key, toTotals(b)]));
+  private periodTotals(paperIds: string[], period: { fromMonth: string; toMonth: string }): Promise<Map<string, MetricTotalsDto>> {
+    return this.sumMetrics(paperIds, [{ range: { month: { gte: period.fromMonth, lte: period.toMonth } } }]);
+  }
+
+  /**
+   * Metric totals per paper over the paper-metrics matching `filter`, for any number of papers: asked for in slices
+   * of `MAX_DOCS` ids, each a terms aggregation with a bucket for every paper in it.
+   */
+  private async sumMetrics(paperIds: string[], filter: estypes.QueryDslQueryContainer[] = []): Promise<Map<string, MetricTotalsDto>> {
+    const out = new Map<string, MetricTotalsDto>();
+    for (const ids of chunks([...new Set(paperIds)])) {
+      const res = await this.es.search({
+        index: ALIASES.paperMetrics,
+        size: 0,
+        query: { bool: { filter: [{ terms: { paperId: ids } }, ...filter] } },
+        aggs: { papers: { terms: { field: 'paperId', size: ids.length }, aggs: TOTALS_AGGS } },
+      });
+      const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
+      for (const b of buckets) out.set(b.key, toTotals(b));
+    }
+    return out;
   }
 
   /** Most-read papers (by views) within the period: the dashboard's "Impact pulse". */
@@ -127,12 +135,11 @@ export class PapersService {
     const paper = (await getMany<Paper>(this.es, ALIASES.papers, [id])).get(id);
     if (!paper || !ScopeService.inScope(await this.scope.topicScope(user), paper.topicId)) throw new NotFoundException('Paper not found');
 
-    const [[item], metricsRes, citationsRes] = await Promise.all([
+    const [[item], metrics, citations] = await Promise.all([
       this.totals([id]).then((t) => this.decorate([paper], t)),
-      this.es.search<PaperMetrics>({ index: ALIASES.paperMetrics, size: MAX_DOCS, query: { term: { paperId: id } }, sort: [{ month: 'asc' }] }),
-      this.es.search<Citation>({ index: ALIASES.citations, size: MAX_DOCS, query: { term: { paperId: id } }, sort: [{ year: 'desc' }, { id: 'asc' }] }),
+      readAll<PaperMetrics>(this.es, ALIASES.paperMetrics, { query: { term: { paperId: id } }, sort: [{ month: 'asc' }] }),
+      readAll<Citation>(this.es, ALIASES.citations, { query: { term: { paperId: id } }, sort: [{ year: 'desc' }, { id: 'asc' }] }),
     ]);
-    const metrics = sources(metricsRes);
     const latest = metrics[metrics.length - 1];
     return {
       ...item,
@@ -140,30 +147,20 @@ export class PapersService {
       audience: latest?.audience ?? null,
       geo: latest?.geo ?? [],
       split: latest?.split ?? null,
-      citations: sources(citationsRes),
+      citations,
     };
   }
 
   /** Lifetime metric totals per paper, from paper-metrics. */
-  private async totals(paperIds: string[]): Promise<Map<string, MetricTotalsDto>> {
-    if (paperIds.length === 0) return new Map();
-    const res = await this.es.search({
-      index: ALIASES.paperMetrics,
-      size: 0,
-      query: { terms: { paperId: paperIds } },
-      aggs: { papers: { terms: { field: 'paperId', size: paperIds.length }, aggs: TOTALS_AGGS } },
-    });
-    const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
-    return new Map(buckets.map((b) => [b.key, toTotals(b)]));
+  private totals(paperIds: string[]): Promise<Map<string, MetricTotalsDto>> {
+    return this.sumMetrics(paperIds);
   }
 
   /** Time to first citation across the caller's papers, or one topic's. */
   async firstCitationSummary(user: Person, q: FirstCitationQueryDto): Promise<FirstCitationSummaryDto> {
     const filter: estypes.QueryDslQueryContainer[] = [await this.scope.filter(user)];
     if (q.topicId) filter.push({ term: { topicId: q.topicId } });
-    const papers = sources(
-      await this.es.search<Pick<Paper, 'id' | 'published'>>({ index: ALIASES.papers, size: MAX_DOCS, _source: ['id', 'published'], query: { bool: { filter } } }),
-    );
+    const papers = await readAll<Pick<Paper, 'id' | 'published'>>(this.es, ALIASES.papers, { _source: ['id', 'published'], query: { bool: { filter } } });
     const first = await firstCitedMonths(this.es, papers.map((p) => p.id));
     const lags = papers.filter((p) => first.has(p.id)).map((p) => monthsBetween(p.published, first.get(p.id)!));
     const today = this.clock.today();

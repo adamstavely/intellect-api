@@ -113,7 +113,14 @@ export interface TopicRequest {
   requestHash: string;
   /** The id reserved for the topic; it moves only if another topic took it before this one was written. */
   topicId: string;
+  /**
+   * `pending` until an attempt has written the topic, its opening questions and its rollups; then `completed`. A failed
+   * attempt leaves it pending for a retry to finish. Records from before this field read as pending.
+   */
+  status?: 'pending' | 'completed';
   createdAt: string;
+  /** When an attempt finished the topic. */
+  completedAt?: string;
 }
 
 export type QuestionStatus = 'open' | 'partially' | 'answered';

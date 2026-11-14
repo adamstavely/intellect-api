@@ -1,4 +1,5 @@
 import type { Client } from '@elastic/elasticsearch';
+import { chunks } from '../common/es';
 import { ALIASES } from '../elastic/indices';
 
 /**
@@ -31,16 +32,20 @@ export function median(values: number[]): number | null {
 
 /** The first month each paper was cited in. Papers never cited are absent from the map. */
 export async function firstCitedMonths(es: Client, paperIds: string[]): Promise<Map<string, string>> {
-  if (paperIds.length === 0) return new Map();
-  const res = await es.search({
-    index: ALIASES.paperMetrics,
-    size: 0,
-    query: { bool: { filter: [{ terms: { paperId: paperIds } }, { range: { citations: { gt: 0 } } }] } },
-    aggs: { papers: { terms: { field: 'paperId', size: paperIds.length }, aggs: { first: { min: { field: 'month', format: 'yyyy-MM' } } } } },
-  });
-  type Bucket = { key: string; first: { value_as_string?: string } };
-  const buckets = (res.aggregations?.papers as { buckets: Bucket[] } | undefined)?.buckets ?? [];
-  return new Map(buckets.filter((b) => b.first.value_as_string).map((b) => [b.key, b.first.value_as_string!]));
+  const out = new Map<string, string>();
+  // In slices, so any number of papers fits a terms query and aggregation.
+  for (const ids of chunks([...new Set(paperIds)])) {
+    const res = await es.search({
+      index: ALIASES.paperMetrics,
+      size: 0,
+      query: { bool: { filter: [{ terms: { paperId: ids } }, { range: { citations: { gt: 0 } } }] } },
+      aggs: { papers: { terms: { field: 'paperId', size: ids.length }, aggs: { first: { min: { field: 'month', format: 'yyyy-MM' } } } } },
+    });
+    type Bucket = { key: string; first: { value_as_string?: string } };
+    const buckets = (res.aggregations?.papers as { buckets: Bucket[] } | undefined)?.buckets ?? [];
+    for (const b of buckets) if (b.first.value_as_string) out.set(b.key, b.first.value_as_string);
+  }
+  return out;
 }
 
 export function firstCitation(published: string, month: string | undefined): FirstCitation {

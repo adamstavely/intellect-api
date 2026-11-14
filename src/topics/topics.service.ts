@@ -1,8 +1,8 @@
-import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, HttpException, Inject, Injectable, InternalServerErrorException, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { Client, errors, estypes } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { getMany, MAX_DOCS, sources } from '../common/es';
+import { getMany, readAll, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Citation, Gap, OrgUnit, Paper, Person, Question, Topic, TopicRequest, Work } from '../model/types';
@@ -39,6 +39,8 @@ const topicIdCandidates = (name: string): string[] => {
   return Array.from({ length: 50 }, (_, i) => (i ? `${base}-${i + 1}` : base));
 };
 
+type Reservation = { record: TopicRequest; seqNo: number; primaryTerm: number };
+
 type QuestionIds = (topicId: string, i: number) => string;
 /** The i-th opening question's id: fixed by the topic, so writing the questions again doesn't duplicate them. */
 const questionId: QuestionIds = (topicId, i) => `${topicId}-q${i + 1}`;
@@ -57,14 +59,19 @@ export class TopicsService {
   ) {}
 
   /**
-   * New Topic flow: the topic plus its opening questions. Elastic has no transactions, so the questions are written
-   * after the topic, and if that fails (a rejected item or a failed request) both are removed. Rollups (health, stats)
-   * are then computed like any other write; a topic with no gaps starts at full coverage.
+   * New Topic flow: the topic plus its opening questions. Rollups (health, stats) are then computed like any other
+   * write; a topic with no gaps starts at full coverage.
    *
-   * With an idempotency key, a repeat of the request finishes the topic the first attempt created – writing any missing
-   * questions and the rollups – rather than creating a second one. That covers a failure the clean-up couldn't undo,
-   * and a lost response. A repeat must be the same request (by `requestHash`); different details under the key are a
-   * conflict. The key is enforced atomically (see `reserve`), so attempts racing with the same key make one topic.
+   * With an idempotency key, creation is a recoverable operation tracked on the key's `topic-requests` record: it is
+   * `pending` from the reservation until an attempt has written the topic, its questions and its rollups, then
+   * `completed`. Every write is idempotent – the topic goes to the id the record reserves and each question to an id
+   * fixed by the topic – so any attempt (a retry, or one racing another with the same key) re-applies them and finishes
+   * the same topic. A failed attempt deletes nothing, since another attempt may have finished that topic meanwhile: it
+   * leaves the record pending and returns an error, and a retry with the key completes it. A repeat after completion
+   * returns the topic without writing anything. A repeat must be the same request (by `requestHash`); different details
+   * under the key are a conflict.
+   *
+   * Without a key the topic is this request's alone, so if its questions can't be written both are removed.
    */
   async create(user: Person, body: CreateTopicDto, idempotencyKey?: string): Promise<TopicDetailDto> {
     if (user.role !== 'chief' && body.leadId !== user.id) throw new ForbiddenException('A PI can only create topics they lead');
@@ -114,22 +121,51 @@ export class TopicsService {
       trend: [],
       ...(key ? { idempotencyKey: key, idempotencyHash: hash } : {}),
     };
-    topic.id = key ? await this.createReserved(topic, key, hash!) : await this.createWithUniqueId(topic);
+    if (!key) return this.createUnkeyed(user, topic, texts, today);
 
+    const reservation = await this.reserve(key, hash!, topic.name);
+    if (reservation.record.status === 'completed') return this.get(user, reservation.record.topicId);
+    try {
+      topic.id = await this.createReserved(topic, key, hash!, reservation);
+      await this.writeQuestions(topic, texts);
+      await this.rollups.recompute(topic.id, today);
+      await this.complete(key);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      // Nothing is undone: the writes are idempotent, and another attempt under the key may already have finished.
+      this.#log.error(`Topic for Idempotency-Key ${topicRequestId(key)} not finished: ${(err as Error).message}`);
+      throw new InternalServerErrorException(
+        `Could not finish creating the topic${topic.id ? ` ${topic.id}` : ''}; retry with the same Idempotency-Key to finish it`,
+      );
+    }
+    return this.get(user, topic.id);
+  }
+
+  /** A topic no other request can share: if its questions can't be written, it is removed again. */
+  private async createUnkeyed(user: Person, topic: Topic, texts: string[], today: string): Promise<TopicDetailDto> {
+    topic.id = await this.createWithUniqueId(topic);
     try {
       await this.writeQuestions(topic, texts);
     } catch (err) {
       const undone = await this.removeTopic(topic.id);
       this.#log.error(`Opening questions for ${topic.id} not saved: ${(err as Error).message}`);
       throw new InternalServerErrorException(
-        undone
-          ? 'Could not save the opening questions; the topic was not created'
-          : `Could not save the opening questions for ${topic.id}${key ? '; retry with the same Idempotency-Key to finish it' : ''}`,
+        undone ? 'Could not save the opening questions; the topic was not created' : `Could not save the opening questions for ${topic.id}`,
       );
     }
-
     await this.rollups.recompute(topic.id, today);
     return this.get(user, topic.id);
+  }
+
+  /** Marks the key's creation finished. Idempotent: racing attempts that both finish write the same state. */
+  private async complete(key: string): Promise<void> {
+    await this.es.update({
+      index: ALIASES.topicRequests,
+      id: topicRequestId(key),
+      doc: { status: 'completed', completedAt: new Date().toISOString() },
+      refresh: 'wait_for',
+      retry_on_conflict: 3,
+    });
   }
 
   /**
@@ -149,8 +185,8 @@ export class TopicsService {
    * then writes the topic at that id with op_type create too. Whichever lands first makes it; the others find it there,
    * carrying the key, and finish that one. Returns the topic's id.
    */
-  private async createReserved(topic: Topic, key: string, hash: string): Promise<string> {
-    let { record, seqNo, primaryTerm } = await this.reserve(key, hash, topic.name);
+  private async createReserved(topic: Topic, key: string, hash: string, reservation: Reservation): Promise<string> {
+    let { record, seqNo, primaryTerm } = reservation;
     for (let n = 0; n < 50; n++) {
       try {
         await this.es.create({ index: ALIASES.topics, id: record.topicId, document: { ...topic, id: record.topicId }, refresh: 'wait_for' });
@@ -161,7 +197,7 @@ export class TopicsService {
       const there = (await getMany<Topic>(this.es, ALIASES.topics, [record.topicId], ['idempotencyKey'])).get(record.topicId);
       // Another attempt under this key wrote it (or this one did, and its response was lost).
       if (there?.idempotencyKey === key) return record.topicId;
-      // Gone again (a failed attempt's clean-up): try the same id.
+      // Gone again (removed since the conflict): try the same id.
       if (!there) continue;
       // A different topic took the id between reserving and writing: move the reservation, unless another attempt
       // under this key already has, in which case follow it.
@@ -187,12 +223,12 @@ export class TopicsService {
   }
 
   /** The key's record, created with a free topic id if this is the key's first use. A different request under the key is a conflict. */
-  private async reserve(key: string, hash: string, name: string): Promise<{ record: TopicRequest; seqNo: number; primaryTerm: number }> {
+  private async reserve(key: string, hash: string, name: string): Promise<Reservation> {
     const id = topicRequestId(key);
     const existing = await this.es.get<TopicRequest>({ index: ALIASES.topicRequests, id }, { ignore: [404] });
     let found = existing.found ? existing : undefined;
     if (!found) {
-      const record: TopicRequest = { key, requestHash: hash, topicId: await this.freeTopicId(name), createdAt: new Date().toISOString() };
+      const record: TopicRequest = { key, requestHash: hash, topicId: await this.freeTopicId(name), status: 'pending', createdAt: new Date().toISOString() };
       try {
         const res = await this.es.create({ index: ALIASES.topicRequests, id, document: record, refresh: 'wait_for' });
         return { record, seqNo: res._seq_no!, primaryTerm: res._primary_term! };
@@ -236,7 +272,10 @@ export class TopicsService {
     if (clash) throw new Error(`Question id ${clash.id} is already used by ${stored.get(clash.id)?.topicId ?? 'a record that is gone'}`);
   }
 
-  /** Best-effort undo of a half-made topic: its questions, then the topic. False when something was left behind. */
+  /**
+   * Best-effort undo of a half-made topic created without a key – one no other request can have written to: its
+   * questions, then the topic. False when something was left behind. Never used for a keyed topic.
+   */
   private async removeTopic(id: string): Promise<boolean> {
     try {
       const res = await this.es.deleteByQuery({ index: ALIASES.questions, query: { term: { topicId: id } }, refresh: true, conflicts: 'proceed' });
@@ -268,9 +307,8 @@ export class TopicsService {
     if (q.bin) filter.push({ term: { bin: q.bin } });
     if (q.health) filter.push({ term: { health: q.health } });
 
-    const topics = sources(
-      await this.es.search<Topic>({ index: ALIASES.topics, size: MAX_DOCS, query: { bool: { filter } }, sort: SORTS[q.sort ?? 'risk'] }),
-    );
+    // Every topic in scope, ordered by Elasticsearch over all of them.
+    const topics = await readAll<Topic>(this.es, ALIASES.topics, { query: { bool: { filter } }, sort: SORTS[q.sort ?? 'risk'] });
     const [leads, recent] = await Promise.all([
       getMany<Person>(this.es, ALIASES.people, topics.map((t) => t.leadId), ['id', 'name', 'initials']),
       recentPaperCounts(this.es, topics.map((t) => t.id), this.clock.today()),
@@ -286,14 +324,10 @@ export class TopicsService {
     const [units, leads, staffed, recent] = await Promise.all([
       getMany<OrgUnit>(this.es, ALIASES.orgUnits, [topic.teamId, topic.centerId].filter((x): x is string => !!x)),
       getMany<Person>(this.es, ALIASES.people, [topic.leadId], ['id', 'name', 'initials']),
-      this.es.search<Person>({
-        index: ALIASES.people,
-        size: MAX_DOCS,
-        query: { nested: { path: 'allocations', query: { term: { 'allocations.topicId': id } } } },
-      }),
+      readAll<Person>(this.es, ALIASES.people, { query: { nested: { path: 'allocations', query: { term: { 'allocations.topicId': id } } } } }),
       recentPaperCounts(this.es, [id], this.clock.today()),
     ]);
-    const people = sources(staffed)
+    const people = staffed
       .map((p) => ({ person: personRef(p), fte: p.allocations.filter((a) => a.topicId === id).reduce((s, a) => s + a.fte, 0) }))
       .sort((a, b) => b.fte - a.fte || a.person.name.localeCompare(b.person.name));
     const lead = leads.get(topic.leadId);
@@ -311,16 +345,17 @@ export class TopicsService {
     };
   }
 
-  /** The whole traceability spine with one msearch across five indices filtered on topicId. */
+  /** The whole traceability spine: every record of the topic in five indices, however many (see `readAll`). */
   async spine(user: Person, id: string): Promise<SpineDto> {
     await this.visibleTopic(user, id);
-    const body = { size: MAX_DOCS, query: { term: { topicId: id } }, sort: [{ id: 'asc' as const }] };
-    const indices = [ALIASES.questions, ALIASES.gaps, ALIASES.work, ALIASES.papers, ALIASES.citations];
-    const { responses } = await this.es.msearch({ searches: indices.flatMap((index) => [{ index }, body]) });
-    const [questions, gaps, work, papers, citations] = responses.map((r, i) => {
-      if ('error' in r) throw new Error(`spine query on ${indices[i]} failed: ${JSON.stringify(r.error)}`);
-      return sources(r as { hits: { hits: { _source?: unknown }[] } });
-    }) as [Question[], Gap[], Work[], Paper[], Citation[]];
+    const body = { query: { term: { topicId: id } }, sort: [{ id: 'asc' as const }] };
+    const [questions, gaps, work, papers, citations] = await Promise.all([
+      readAll<Question>(this.es, ALIASES.questions, body),
+      readAll<Gap>(this.es, ALIASES.gaps, body),
+      readAll<Work>(this.es, ALIASES.work, body),
+      readAll<Paper>(this.es, ALIASES.papers, body),
+      readAll<Citation>(this.es, ALIASES.citations, body),
+    ]);
 
     const records = { questions, gaps, work, papers, citations };
     return { topicId: id, ...records, edges: spineEdges(records) };

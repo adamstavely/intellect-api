@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
-import { getMany, MAX_DOCS, sources } from '../common/es';
+import { getMany, readAll } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Gap, GapSeverity, Person, Topic, Work } from '../model/types';
@@ -27,19 +27,28 @@ export class GapsService {
     private readonly scope: ScopeService,
   ) {}
 
-  async list(user: Person, q: GapsQueryDto): Promise<GapListItemDto[]> {
+  /** The first `limit` (default 20) of `ranked`, and how many gaps matched in all. */
+  async list(user: Person, q: GapsQueryDto): Promise<{ gaps: GapListItemDto[]; total: number }> {
+    return this.ranked(user, q, q.limit ?? 20);
+  }
+
+  /**
+   * Gaps in the caller's scope matching `q`, most in need of attention first, decorated, cut to `limit` (all of them
+   * when unset), with the number that matched before the cut. Every work item in flight and every matching gap is read
+   * (see `readAll`), so coverage and the ranking hold however many there are, and only then is the list cut.
+   */
+  async ranked(user: Person, q: Omit<GapsQueryDto, 'limit'>, limit?: number): Promise<{ gaps: GapListItemDto[]; total: number }> {
     const scope = ScopeService.toFilter(await this.scope.topicScope(user), 'topicId');
     const filter: estypes.QueryDslQueryContainer[] = [scope];
     const mustNot: estypes.QueryDslQueryContainer[] = [];
     if (q.topicId) filter.push({ term: { topicId: q.topicId } });
     if (q.severity) filter.push({ term: { severity: q.severity } });
     if (q.status) filter.push({ term: { status: q.status } });
+    if (q.attention) mustNot.push({ term: { status: 'closed' } });
 
     // Work in flight (anything not complete): `active` items cover a gap; all of it counts as invested in it.
-    const inFlight = sources(
-      await this.es.search<Pick<Work, 'gapIds' | 'status' | 'budget' | 'fte'>>({
-        index: ALIASES.work,
-        size: MAX_DOCS,
+    const [inFlight, matching] = await Promise.all([
+      readAll<Pick<Work, 'gapIds' | 'status' | 'budget' | 'fte'>>(this.es, ALIASES.work, {
         _source: ['gapIds', 'status', 'budget', 'fte'],
         query: {
           bool: {
@@ -48,7 +57,8 @@ export class GapsService {
           },
         },
       }),
-    );
+      readAll<Gap>(this.es, ALIASES.gaps, { query: { bool: { filter, must_not: mustNot } } }),
+    ]);
     const activeOn = new Map<string, number>();
     const invested = new Map<string, { budget: number; fte: number }>();
     for (const w of inFlight) {
@@ -59,31 +69,24 @@ export class GapsService {
       }
     }
     const covered = new Set(activeOn.keys());
-    if (q.attention) {
-      mustNot.push({ term: { status: 'closed' } });
-      if (covered.size) mustNot.push({ terms: { id: [...covered] } });
-    }
+    const gaps = q.attention ? matching.filter((g) => !covered.has(g.id)) : matching;
 
-    const gaps = sources(await this.es.search<Gap>({ index: ALIASES.gaps, size: MAX_DOCS, query: { bool: { filter, must_not: mustNot } } }));
-    const [topics, owners] = await Promise.all([
-      getMany<Topic>(this.es, ALIASES.topics, gaps.map((g) => g.topicId), ['id', 'name', 'health', 'healthScore', 'bin']),
-      getMany<Person>(this.es, ALIASES.people, gaps.map((g) => g.ownerId), ['id', 'name', 'initials']),
-    ]);
+    const topics = await getMany<Topic>(this.es, ALIASES.topics, gaps.map((g) => g.topicId), ['id', 'name', 'health', 'healthScore', 'bin']);
+    const page = gaps.sort(byAttention((id) => topics.get(id)?.healthScore ?? 100)).slice(0, limit ?? gaps.length);
+    const owners = await getMany<Person>(this.es, ALIASES.people, page.map((g) => g.ownerId), ['id', 'name', 'initials']);
 
-    return gaps
-      .sort(byAttention((id) => topics.get(id)?.healthScore ?? 100))
-      .slice(0, q.limit ?? 20)
-      .map((g) => {
-        const t = topics.get(g.topicId);
-        const o = owners.get(g.ownerId);
-        return {
-          ...g,
-          topic: { id: g.topicId, name: t?.name ?? g.topicId, health: t?.health ?? 'watch', healthScore: t?.healthScore ?? 0, bin: t?.bin ?? 4 },
-          owner: o ? { id: o.id, name: o.name, initials: o.initials } : null,
-          covered: covered.has(g.id),
-          activeWork: activeOn.get(g.id) ?? 0,
-          invested: roundInvested(invested.get(g.id)),
-        };
-      });
+    const items = page.map((g) => {
+      const t = topics.get(g.topicId);
+      const o = owners.get(g.ownerId);
+      return {
+        ...g,
+        topic: { id: g.topicId, name: t?.name ?? g.topicId, health: t?.health ?? 'watch', healthScore: t?.healthScore ?? 0, bin: t?.bin ?? 4 },
+        owner: o ? { id: o.id, name: o.name, initials: o.initials } : null,
+        covered: covered.has(g.id),
+        activeWork: activeOn.get(g.id) ?? 0,
+        invested: roundInvested(invested.get(g.id)),
+      };
+    });
+    return { gaps: items, total: gaps.length };
   }
 }

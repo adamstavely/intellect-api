@@ -1,4 +1,4 @@
-import { PersonDto } from '../model/model.dto';
+import { AllocationDto, PersonDto } from '../model/model.dto';
 
 export class TopicRefDto {
   id!: string;
@@ -11,8 +11,15 @@ export class PersonAllocationDto {
 }
 
 export class PersonSummaryDto extends PersonDto {
-  /** Total allocated FTE. */
+  /**
+   * Allocations on topics in the caller's scope only (all of them for the Chief). Work elsewhere is counted in
+   * `otherFte`, never listed.
+   */
+  declare allocations: AllocationDto[];
+  /** Total allocated FTE, across every topic, in scope or not. */
   load!: number;
+  /** FTE on topics outside the caller's scope, as one total; 0 for the Chief. */
+  otherFte!: number;
   /** load > capacity */
   overCapacity!: boolean;
 }

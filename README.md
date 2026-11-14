@@ -38,12 +38,12 @@ All scoped to the caller (see Auth below). Full schemas at `/docs`.
 
 | Endpoint | Serves |
 |---|---|
-| `GET /people`, `GET /people/:id` | People page; load vs capacity |
+| `GET /people`, `GET /people/:id` | People page; load vs capacity. A PI sees only allocations on topics in their scope; FTE elsewhere is one total, `otherFte` |
 | `GET /portfolio/summary?period=` | Dashboard KPIs, health mix, bin mix, coverage, reads trend |
 | `GET /topics?sort=risk&bin=&health=` | Dashboard priorities table |
 | `GET /topics/:id` | Topic header and resourcing strip |
 | `GET /topics/:id/spine` | Question → Gap → Work → Paper → Citation nodes and edges |
-| `GET /gaps?attention=true&limit=5` | Gaps needing attention (open, no active work; most severe first) |
+| `GET /gaps?attention=true&limit=5` | Gaps needing attention (open, no active work; most severe first). Ranked over every match; `X-Total-Count` says how many matched before `limit` |
 | `GET /papers`, `GET /papers/top?limit=3&period=`, `GET /papers/:id` | Papers list, impact pulse, detail with monthly metrics |
 | `GET /org` | Centers → teams → topic roll-ups |
 | `GET /search?q=` | ⌘K search over topics, gaps, papers and people |
@@ -53,7 +53,7 @@ All scoped to the caller (see Auth below). Full schemas at `/docs`.
 
 | Endpoint | Notes |
 |---|---|
-| `POST /topics` | New Topic flow: topic plus opening questions. Chief, or a PI creating a topic they lead. Health is computed, never entered. Send an `Idempotency-Key` header to make retries safe: the key (per user) is recorded in `topic-requests` before the topic is written, so a retry or a concurrent repeat returns the same topic, and the key with different details is a 409. |
+| `POST /topics` | New Topic flow: topic plus opening questions. Chief, or a PI creating a topic they lead. Health is computed, never entered. Send an `Idempotency-Key` header to make retries safe: the key (per user) is recorded in `topic-requests` before the topic is written, `pending` until an attempt has written the topic, its questions and rollups, then `completed`. Every write is idempotent, so a retry or a concurrent repeat finishes and returns the same topic; a failed attempt deletes nothing and leaves the key pending for a retry. The key with different details is a 409. |
 | `PATCH /papers/:id/grade` | `{ "grade": "excellent" }` or `null` to clear. Chief only (403 otherwise). Sets `gradedBy`/`gradedAt` and recomputes the topic's grade roll-up (`stats.grades`). |
 | `GET /brief?period=FY26-Q2` | Directorate Brief: executive summary, at-a-glance, centers scorecard, exposure register, investment vs priority, impact highlights and rule-based decisions. No LLM. |
 

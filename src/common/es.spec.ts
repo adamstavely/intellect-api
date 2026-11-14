@@ -1,5 +1,6 @@
 import type { Client } from '@elastic/elasticsearch';
-import { getMany, searchAll } from './es';
+import { fakeEs } from '../../test/unit/fake-es';
+import { chunks, getMany, readAll, searchAll } from './es';
 
 const client = (docs: unknown[]) => ({ mget: jest.fn().mockResolvedValue({ docs }) }) as unknown as Client;
 
@@ -60,5 +61,32 @@ describe('searchAll', () => {
     es.search.mockRejectedValueOnce(new Error('search_phase_execution_exception'));
     await expect(searchAll(es as unknown as Client, 'gaps', {})).rejects.toThrow('search_phase_execution_exception');
     expect(es.closePointInTime).toHaveBeenCalledWith({ id: 'pit-1' });
+  });
+});
+
+describe('readAll', () => {
+  const docs = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `w${String(i).padStart(5, '0')}`, due: `2026-${String((i % 12) + 1).padStart(2, '0')}` }));
+
+  it('reads a result that fits one window with one search and no point in time', async () => {
+    const { es, client } = fakeEs({ work: docs(10_000) });
+    expect(await readAll(client, 'work', {})).toHaveLength(10_000);
+    expect(es.search).toHaveBeenCalledTimes(1);
+    expect(es.openPointInTime).not.toHaveBeenCalled();
+  });
+
+  it('reads every hit past the window, in the order asked for', async () => {
+    const { es, client } = fakeEs({ work: docs(10_001) });
+    const all = await readAll<{ id: string; due: string }>(client, 'work', { sort: [{ due: 'desc' }, { id: 'asc' }] });
+    expect(all).toHaveLength(10_001);
+    expect(all[0]).toEqual({ id: 'w00011', due: '2026-12' });
+    expect(all.at(-1)).toEqual({ id: 'w09996', due: '2026-01' });
+    expect(es.closePointInTime).toHaveBeenCalled();
+  });
+});
+
+describe('chunks', () => {
+  it('slices without losing or repeating anything', () => {
+    expect(chunks([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    expect(chunks([], 2)).toEqual([]);
   });
 });

@@ -103,7 +103,7 @@ export const INDICES: IndexDefinition[] = [
     // the atomic guard: only one request can create the record, and it reserves the topic id every retry reuses.
     alias: 'topic-requests',
     version: 1,
-    mappings: strict({ key: keyword, requestHash: { type: 'keyword', index: false }, topicId: keyword, createdAt: timestamp }),
+    mappings: strict({ key: keyword, requestHash: { type: 'keyword', index: false }, topicId: keyword, status: keyword, createdAt: timestamp, completedAt: timestamp }),
   },
   {
     alias: 'questions',
