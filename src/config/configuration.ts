@@ -21,6 +21,13 @@ export interface AuditConfig {
   timeoutMs: number;
   /** How old (by indexedAt) an event must be before it's forwarded, in ms: above write latency plus clock skew. */
   settleMs: number;
+  /**
+   * The most the audit drain may take at shutdown, in ms, all told: the write already in flight, queued batches and
+   * retries. Keep it well inside the platform's termination grace period (Kubernetes: 30s by default).
+   */
+  shutdownTimeoutMs: number;
+  /** The most events held in memory waiting to be written; beyond it, events are logged in full instead. */
+  maxQueue: number;
 }
 
 /**
@@ -82,6 +89,8 @@ export function auditOptions(env: NodeJS.ProcessEnv = process.env): AuditConfig 
     batchSize: int(env.AUDIT_FORWARD_BATCH, 200, 1, 5000),
     timeoutMs: int(env.AUDIT_WEBHOOK_TIMEOUT_MS, 10_000, 100, 120_000),
     settleMs: int(env.AUDIT_FORWARD_SETTLE_MS, 30_000, 0, 3_600_000),
+    shutdownTimeoutMs: int(env.AUDIT_SHUTDOWN_TIMEOUT_MS, 10_000, 100, 120_000),
+    maxQueue: int(env.AUDIT_MAX_QUEUE, 10_000, 1, 1_000_000),
   };
 }
 

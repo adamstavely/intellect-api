@@ -1,6 +1,6 @@
-import type { Client } from '@elastic/elasticsearch';
+import { errors, type Client } from '@elastic/elasticsearch';
 import { fakeEs } from '../../test/unit/fake-es';
-import { chunks, getMany, readAll, searchAll } from './es';
+import { chunks, count, getMany, msearch, readAll, search, searchAll, SearchUnavailableError } from './es';
 
 const client = (docs: unknown[]) => ({ mget: jest.fn().mockResolvedValue({ docs }) }) as unknown as Client;
 
@@ -81,6 +81,81 @@ describe('readAll', () => {
     expect(all[0]).toEqual({ id: 'w00011', due: '2026-12' });
     expect(all.at(-1)).toEqual({ id: 'w09996', due: '2026-01' });
     expect(es.closePointInTime).toHaveBeenCalled();
+  });
+});
+
+/** Partial successes Elasticsearch can return with a 200: a timeout, or shards that failed. */
+const TIMED_OUT = { timed_out: true, _shards: { total: 2, successful: 2, failed: 0 } };
+const SHARD_FAILED = {
+  timed_out: false,
+  _shards: { total: 2, successful: 1, failed: 1, failures: [{ shard: 1, index: 'gaps-v1', reason: { type: 'node_not_connected_exception', reason: 'gone' } }] },
+};
+const empty = { hits: { total: { value: 0, relation: 'eq' }, hits: [] } };
+
+describe('partial results', () => {
+  it.each([
+    ['timed out', TIMED_OUT, /search timed out/],
+    ['shards failed', SHARD_FAILED, /search failed on 1 of 2 shards \(node_not_connected_exception: gone\)/],
+  ])('readAll rejects a first search that %s, rather than calling it empty', async (_, partial, message) => {
+    const es = { search: jest.fn().mockResolvedValue({ ...empty, ...partial }) };
+    const read = readAll(es as unknown as Client, 'gaps', {});
+    await expect(read).rejects.toThrow(SearchUnavailableError);
+    await expect(read).rejects.toThrow(message);
+    expect(es.search.mock.calls[0][0]).toMatchObject({ allow_partial_search_results: false });
+  });
+
+  it('searchAll rejects a partial later page, closing the point in time, and refuses partial pages up front', async () => {
+    const page = (n: number) => Array.from({ length: n }, (_, i) => ({ _source: { id: `g${i}` }, sort: [i] }));
+    const es = {
+      openPointInTime: jest.fn().mockResolvedValue({ id: 'pit-1', _shards: { total: 2, successful: 2, failed: 0 } }),
+      closePointInTime: jest.fn().mockResolvedValue({}),
+      search: jest
+        .fn()
+        .mockResolvedValueOnce({ pit_id: 'pit-2', hits: { hits: page(1000) }, _shards: { total: 2, successful: 2, failed: 0 } })
+        .mockResolvedValueOnce({ pit_id: 'pit-3', hits: { hits: [] }, ...SHARD_FAILED }),
+    };
+    await expect(searchAll(es as unknown as Client, 'gaps', {})).rejects.toThrow(SearchUnavailableError);
+    expect(es.search).toHaveBeenCalledTimes(2);
+    for (const [req] of es.search.mock.calls) expect(req).toMatchObject({ allow_partial_search_results: false });
+    expect(es.closePointInTime).toHaveBeenCalledWith({ id: 'pit-2' });
+  });
+
+  it('searchAll rejects a point in time opened on only some shards', async () => {
+    const es = { openPointInTime: jest.fn().mockResolvedValue({ id: 'pit-1', ...SHARD_FAILED }), search: jest.fn(), closePointInTime: jest.fn() };
+    await expect(searchAll(es as unknown as Client, 'gaps', {})).rejects.toThrow(/open point in time failed on 1 of 2 shards/);
+    expect(es.search).not.toHaveBeenCalled();
+  });
+
+  it('rejects a count or an aggregation that missed shards', async () => {
+    const es = {
+      count: jest.fn().mockResolvedValue({ count: 0, ...SHARD_FAILED }),
+      search: jest.fn().mockResolvedValue({ ...empty, aggregations: { papers: { buckets: [] } }, ...TIMED_OUT }),
+    };
+    await expect(count(es as unknown as Client, { index: 'questions' })).rejects.toThrow(/count failed on 1 of 2 shards/);
+    await expect(search(es as unknown as Client, { index: 'paper-metrics', size: 0, aggs: {} })).rejects.toThrow(SearchUnavailableError);
+  });
+
+  it('rejects a multi-search when any one search is partial or failed, and refuses partial results in each', async () => {
+    const ok = { ...empty, timed_out: false, _shards: { total: 1, successful: 1, failed: 0 } };
+    const es = { msearch: jest.fn().mockResolvedValueOnce({ responses: [ok, { ...empty, ...SHARD_FAILED }] }) };
+    const req = { searches: [{ index: 'topics' }, {}, { index: 'gaps' }, {}] };
+    await expect(msearch(es as unknown as Client, req)).rejects.toThrow(/search 1 failed on 1 of 2 shards/);
+    expect(es.msearch.mock.calls[0][0].searches).toEqual([{ index: 'topics', allow_partial_search_results: false }, {}, { index: 'gaps', allow_partial_search_results: false }, {}]);
+
+    es.msearch.mockResolvedValueOnce({ responses: [ok, { status: 503, error: { type: 'search_phase_execution_exception', reason: 'all shards failed' } }] });
+    await expect(msearch(es as unknown as Client, req)).rejects.toThrow(SearchUnavailableError);
+  });
+
+  it('turns an unavailable or overloaded cluster into a retriable 503, and leaves other errors alone', async () => {
+    const fail = (statusCode: number, type: string) => new errors.ResponseError({ statusCode, body: { error: { type } }, warnings: null, meta: {} } as never);
+    const es = { search: jest.fn() };
+    es.search.mockRejectedValueOnce(fail(503, 'search_phase_execution_exception'));
+    const err = await search(es as unknown as Client, {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SearchUnavailableError);
+    expect((err as SearchUnavailableError).getStatus()).toBe(503);
+
+    es.search.mockRejectedValueOnce(fail(400, 'parsing_exception'));
+    await expect(search(es as unknown as Client, {})).rejects.toBeInstanceOf(errors.ResponseError);
   });
 });
 

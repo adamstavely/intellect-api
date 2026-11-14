@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, errors } from '@elastic/elasticsearch';
-import { searchAll, sources } from '../common/es';
+import { count, search, searchAll, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Gap, Paper, Person, Topic, TopicHealthHistory, Work } from '../model/types';
@@ -48,7 +48,7 @@ export class TopicRollupService {
     const byTopic = { term: { topicId } };
     const months = trailingMonths(asOf, 12);
     const [questions, tGaps, tWork, papers, people, history] = await Promise.all([
-      this.es.count({ index: ALIASES.questions, query: byTopic }),
+      count(this.es, { index: ALIASES.questions, query: byTopic }),
       searchAll<Pick<Gap, 'id' | 'severity' | 'status'>>(this.es, ALIASES.gaps, { _source: ['id', 'severity', 'status'], query: byTopic }),
       searchAll<Pick<Work, 'status' | 'gapIds' | 'due'>>(this.es, ALIASES.work, { _source: ['status', 'gapIds', 'due'], query: byTopic }),
       searchAll<Pick<Paper, 'grade' | 'partners'>>(this.es, ALIASES.papers, { _source: ['grade', 'partners'], query: byTopic }),
@@ -57,7 +57,7 @@ export class TopicRollupService {
         query: { nested: { path: 'allocations', query: { term: { 'allocations.topicId': topicId } } } },
       }),
       // One snapshot per month, so at most the 11 months before this one.
-      this.es.search<Pick<TopicHealthHistory, 'month' | 'healthScore'>>({
+      search<Pick<TopicHealthHistory, 'month' | 'healthScore'>>(this.es, {
         index: ALIASES.topicHealthHistory,
         size: months.length,
         _source: ['month', 'healthScore'],

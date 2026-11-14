@@ -18,6 +18,20 @@ export default tseslint.config(
     },
   },
   {
+    // Searches go through src/common/es.ts, which refuses partial results and rejects timed-out or shard-failed responses.
+    files: ['src/**/*.ts', 'scripts/**/*.ts'],
+    ignores: ['src/common/es.ts', '**/*.spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        ...["[object.name='es']", "[object.property.name='es']"].map((on) => ({
+          selector: `CallExpression > MemberExpression.callee[property.name=/^(search|count|msearch|openPointInTime)$/]${on}`,
+          message: 'Use search/count/msearch/readAll/searchAll from src/common/es.ts: they reject partial results.',
+        })),
+      ],
+    },
+  },
+  {
     files: ['**/*.spec.ts', 'test/**/*.ts'],
     // Tests poke at untyped JSON response bodies.
     rules: {

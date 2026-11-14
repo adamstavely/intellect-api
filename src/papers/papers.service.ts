@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { chunks, getMany, readAll } from '../common/es';
+import { chunks, getMany, readAll, search } from '../common/es';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
@@ -102,7 +102,7 @@ export class PapersService {
   private async sumMetrics(paperIds: string[], filter: estypes.QueryDslQueryContainer[] = []): Promise<Map<string, MetricTotalsDto>> {
     const out = new Map<string, MetricTotalsDto>();
     for (const ids of chunks([...new Set(paperIds)])) {
-      const res = await this.es.search({
+      const res = await search(this.es, {
         index: ALIASES.paperMetrics,
         size: 0,
         query: { bool: { filter: [{ terms: { paperId: ids } }, ...filter] } },
@@ -117,7 +117,7 @@ export class PapersService {
   /** Most-read papers (by views) within the period: the dashboard's "Impact pulse". */
   async top(user: Person, q: TopPapersQueryDto): Promise<TopPaperDto[]> {
     const period = parsePeriod(q.period, this.clock.today());
-    const res = await this.es.search({
+    const res = await search(this.es, {
       index: ALIASES.paperMetrics,
       size: 0,
       query: { bool: { filter: [await this.scope.filter(user), { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },

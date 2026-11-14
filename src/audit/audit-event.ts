@@ -38,11 +38,19 @@ export interface AuditEvent {
   /** The request body, for requests that change data; redacted, and left out above `MAX_BODY_BYTES`. */
   body: unknown;
   bodyTruncated: boolean;
-  outcome: { status: number; ok: boolean };
+  /**
+   * What came of the request. `delivery` says whether the response went out in full (`completed`) or the client went
+   * away first (`aborted`: whether it got the answer is unknown). Aborted, `status` is what the handler returned or
+   * threw – a write it committed is recorded as such even though the client never heard – and null when no handler
+   * ran (the client left before one started, and none then did): nothing is claimed either way.
+   */
+  outcome: { status: number | null; ok: boolean | null; delivery: AuditDelivery };
   durationMs: number;
   ip: string | null;
   userAgent: string | null;
 }
+
+export type AuditDelivery = 'completed' | 'aborted';
 
 export const MAX_BODY_BYTES = 4096;
 /** Deeper than this, redaction stops and the value is replaced: a pathological body can't exhaust the stack. */
@@ -75,7 +83,10 @@ export interface AuditInput {
   user: Person | undefined;
   /** The X-Intellect-User header, for requests auth refused. */
   claimedUser: string | undefined;
-  status: number;
+  /** The status sent, or for an aborted request the handler's (null when none ran). */
+  status: number | null;
+  /** Whether the response went out in full; `completed` unless said otherwise. */
+  delivery?: AuditDelivery;
   startedAt: number;
   finishedAt: number;
   ip: string | undefined;
@@ -110,7 +121,7 @@ export function toAuditEvent(i: AuditInput): AuditEvent {
     query: redact(i.query) as Record<string, unknown>,
     body,
     bodyTruncated,
-    outcome: { status: i.status, ok: i.status < 400 },
+    outcome: { status: i.status, ok: i.status === null ? null : i.status < 400, delivery: i.delivery ?? 'completed' },
     durationMs: Math.max(0, Math.round(i.finishedAt - i.startedAt)),
     ip: i.ip ?? null,
     userAgent: i.userAgent ?? null,

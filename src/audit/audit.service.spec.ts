@@ -1,5 +1,6 @@
 import type { Client } from '@elastic/elasticsearch';
 import { Logger } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import type { AuditEvent } from './audit-event';
 import { AuditService, MAX_ATTEMPTS, SHUTDOWN_FLUSHES } from './audit.service';
 
@@ -98,5 +99,62 @@ describe('AuditService', () => {
     await jest.runAllTimersAsync();
     await done;
     expect(bulk).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AuditService shutdown deadline', () => {
+  let logged: string[];
+  beforeEach(() => {
+    logged = [];
+    jest.spyOn(Logger.prototype, 'error').mockImplementation((m: string) => void logged.push(m));
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const withConfig = (bulk: jest.Mock, audit: object) => new AuditService({ bulk } as unknown as Client, undefined, { get: () => audit } as unknown as ConfigService);
+  /** Ids of the events logged in full as not written, in log order. */
+  const loggedIds = () => logged.map((m) => /^Audit event (\S+) not written/.exec(m)?.[1]).filter((id): id is string => !!id);
+
+  it('gives up on a stalled write and its queued batches at the deadline, logging every unwritten event exactly once', async () => {
+    const signals: AbortSignal[] = [];
+    // Never answers; only an abort ends it, as the Elasticsearch client does with a signal.
+    const bulk = jest.fn(
+      (_: unknown, { signal }: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signals.push(signal);
+          signal.addEventListener('abort', () => reject(new Error('Request aborted')));
+        }),
+    );
+    const audit = withConfig(bulk, { shutdownTimeoutMs: 300, maxQueue: 10_000 });
+    const ids = Array.from({ length: 2000 }, (_, i) => `e${i}`);
+    // Ten full batches: the first starts writing (and stalls) before shutdown; the rest wait their turn behind it.
+    ids.forEach((id) => audit.record(event(id)));
+    await new Promise((r) => setImmediate(r));
+    expect(bulk).toHaveBeenCalledTimes(1);
+
+    const started = performance.now();
+    await audit.drain();
+    const took = performance.now() - started;
+
+    expect(took).toBeLessThan(300);
+    expect(signals[0].aborted).toBe(true);
+    // Nothing queued behind the stalled write was sent after the deadline.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(bulk).toHaveBeenCalledTimes(1);
+    expect(loggedIds().sort()).toEqual([...ids].sort());
+    expect(new Set(loggedIds()).size).toBe(2000);
+    expect(logged.find((m) => m.startsWith('Audit event e0 '))).toMatch(/within the 300ms shutdown deadline\); event: \{"id":"e0"/);
+  });
+
+  it('keeps the backlog bounded: past maxQueue, events go to the log instead of memory', async () => {
+    const bulk = jest.fn(() => new Promise(() => undefined));
+    const audit = withConfig(bulk, { shutdownTimeoutMs: 100, maxQueue: 250 });
+    // 200 go out in a (stalled) write and 50 more queue; the rest don't fit.
+    for (let i = 0; i < 300; i++) audit.record(event(`e${i}`));
+    expect(loggedIds()).toEqual(Array.from({ length: 50 }, (_, i) => `e${250 + i}`));
+    expect(logged[0]).toMatch(/^Audit event e250 not written \(audit backlog full, 250 events waiting\)/);
+
+    await audit.drain();
+    expect(loggedIds()).toHaveLength(300);
+    expect(new Set(loggedIds()).size).toBe(300);
   });
 });

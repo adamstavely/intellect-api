@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client } from '@elastic/elasticsearch';
-import { getMany, readAll, sources } from '../common/es';
+import { getMany, readAll, search, sources } from '../common/es';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import type { Person, Topic } from '../model/types';
@@ -52,7 +52,7 @@ export class PeopleService {
 
   async get(user: Person, id: string): Promise<PersonDetailDto> {
     const scope = await this.scope.topicScope(user);
-    const res = await this.es.search<Person>({
+    const res = await search<Person>(this.es, {
       index: ALIASES.people,
       size: 1,
       query: { bool: { filter: [{ term: { id } }, ScopeService.peopleFilter(scope, user)] } },

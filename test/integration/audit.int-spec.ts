@@ -86,7 +86,7 @@ describe('audit trail', () => {
       actor: { id: 'hv', role: 'chief', authenticated: true },
       params: { id: 't-neuro' },
       body: null,
-      outcome: { status: 200, ok: true },
+      outcome: { status: 200, ok: true, delivery: 'completed' },
     });
     expect(grade).toMatchObject({ actor: { id: 'mo', role: 'pi' }, params: { id: 'p4' }, body: { grade: 'excellent' }, outcome: { status: 403, ok: false } });
     expect(refused).toMatchObject({ actor: { id: 'nobody', authenticated: false }, outcome: { status: 401 } });

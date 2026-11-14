@@ -69,13 +69,22 @@ Every API request is audited, reads included, along with requests refused by aut
 
 - who: person id, name and role, or the claimed id when auth refused it;
 - what: an action such as `PATCH /papers/:id/grade`, plus the route params, query and, for changes, the redacted body;
-- when, and the outcome: status code and duration.
+- when, and the outcome: status code, duration and `delivery`.
 
 The response carries the event's id as `X-Request-Id`.
 
+**Exactly once, even when the client disconnects.** A request is audited when its response has gone out (`outcome.delivery: "completed"`, with the status sent) or, if the client drops the connection first, as `"aborted"`: whether the client got the answer is unknown. An aborted request carries the status its handler returned or threw, recorded independently of the response: if the handler is still running when the client leaves, the event waits for it, so a write committed after the disconnect is still on the trail as such (`201`, `ok: true`). If no handler had started (the client left while a guard was still deciding), `status` and `ok` are `null`, since a dropped connection alone says nothing about what was written, and the handler is then not run at all.
+
 **Client address behind a proxy.** `ip` is Express's `req.ip`. By default no proxy is trusted, so it is whoever connected – behind a load balancer, the load balancer – and a client's own `X-Forwarded-For` is ignored. Set `TRUST_PROXY` to the proxies in front of the API to record the real client instead; it takes Express's [`trust proxy`](https://expressjs.com/en/guide/behind-proxies.html) forms: a hop count (`1` for a single load balancer), a comma-separated list of addresses, CIDR ranges and `loopback`/`linklocal`/`uniquelocal`, or `true` (every hop; only when nothing can reach the API except through the proxy).
 
-Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level. On shutdown (SIGTERM), the HTTP server stops taking requests and finishes those in flight first; then the queue is drained, and only then is Elasticsearch closed. Anything still queued when the drain's last few flushes fail is logged in full, as is any event recorded after the drain. Set a retention ILM policy on `audit-v*` in production.
+Events go to the append-only `audit` index, written in batches so requests don't wait on them. A failed write is retried, including individual items Elasticsearch rejects as throttled or failed. An event that can't be written is logged in full at error level: that log is the fallback, and every event ends up either confirmed written or logged there. At most `AUDIT_MAX_QUEUE` events (default 10,000) wait in memory, queued or being written; while Elasticsearch is that far behind, new events go straight to the log instead, so memory stays bounded.
+
+On shutdown (SIGTERM), the HTTP server stops taking requests and finishes those in flight first; then the queue is drained, and only then is Elasticsearch closed. The drain has one deadline, `AUDIT_SHUTDOWN_TIMEOUT_MS` (default 10 s), covering the write already in flight, every queued batch and the retries. When it passes, the write in flight is aborted and every event not confirmed written is logged in full; an aborted write may still have landed, so such an event can be both stored and logged. Anything still failing after the drain's last few flushes is logged the same way, as is any event recorded after the drain. Keep the deadline well inside the platform's termination grace period (Kubernetes: 30 s by default), with room for the HTTP server's own wind-down. Set a retention ILM policy on `audit-v*` in production.
+
+| Variable | Default | |
+|---|---|---|
+| `AUDIT_SHUTDOWN_TIMEOUT_MS` | 10000 | The most the audit drain may take at shutdown, all told (100–120000) |
+| `AUDIT_MAX_QUEUE` | 10000 | Most events held in memory waiting to be written; beyond it they are logged instead (1–1000000) |
 
 **Forwarding to an external service.** Set `AUDIT_WEBHOOK_URL` to POST the trail to an HTTPS endpoint. Plain http is accepted only on localhost, for development.
 
@@ -103,6 +112,7 @@ Elastic is the only datastore (see milestone-1 plan §1 in `scaling-doodle/docs/
 
 - Every record carries `topicId`; each link is stored once, on the child (`gap.questionIds`, `work.gapIds`, `paper.workIds`, `citation.paperId`).
 - Topic rollups (`stats`, `healthScore`, `health`, `trend`, `momentum`) are computed by [`src/topic-health/topic-health.ts`](src/topic-health/topic-health.ts) and stored on the topic. `TopicRollupService.recompute()` refreshes them after a write, using optimistic concurrency. It reads every one of the topic's records, page by page through a point in time, so nothing is cut off at a result window.
+- Reads never trust a partial answer. Every search, count, aggregation and multi-search goes through [`src/common/es.ts`](src/common/es.ts) (lint enforces it), which sets `allow_partial_search_results: false` (point-in-time pages included) and rejects any response that `timed_out` or reports failed shards, as well as a cluster that is overloaded or unreachable. The API answers `503` (retry) instead of returning short results, and a rollup computed from such a read is never stored.
 - `paper-metrics` is filled through the `MetricsSource` interface; `SeedMetricsSource` serves the prototype's figures until the internal metrics API is integrated.
 
 ### Seed

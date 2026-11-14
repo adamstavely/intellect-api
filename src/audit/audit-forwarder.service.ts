@@ -6,6 +6,7 @@ import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
 import { AuditConfig, maxWriteDelayMs } from '../config/configuration';
 import { AuditEvent, sign } from './audit-event';
+import { search } from '../common/es';
 
 /** The cursor over [indexedAt, at, id]. */
 const CURSOR_ID = 'webhook-v2';
@@ -109,7 +110,7 @@ export class AuditForwarder implements OnApplicationBootstrap, OnModuleDestroy {
     }
     const cursor = cursorDoc.found ? (cursorDoc._source?.sort ?? null) : null;
     const from = cursor ? new Date(Number(cursor[0]) - this.#overlapMs).toISOString() : undefined;
-    const res = await this.es.search<AuditEvent>({
+    const res = await search<AuditEvent>(this.es, {
       index: ALIASES.audit,
       size: this.#config.batchSize,
       query: {

@@ -2,6 +2,7 @@ import type { Client } from '@elastic/elasticsearch';
 import { ALIASES } from '../elastic/indices';
 import type { Topic, TopicHealthHistory } from '../model/types';
 import { TopicRollupService } from './topic-rollup.service';
+import { search } from '../common/es';
 
 const ROLLUP_FIELDS = ['stats', 'healthScore', 'health', 'trend', 'momentum'] as const;
 
@@ -47,7 +48,7 @@ export async function reconcile(es: Client, asOf: string): Promise<ReconcileRepo
 async function* allTopics(es: Client): AsyncGenerator<Topic> {
   let after: (string | number)[] | undefined;
   for (;;) {
-    const res = await es.search<Topic>({ index: ALIASES.topics, size: 500, sort: [{ id: 'asc' }], ...(after ? { search_after: after } : {}) });
+    const res = await search<Topic>(es, { index: ALIASES.topics, size: 500, sort: [{ id: 'asc' }], ...(after ? { search_after: after } : {}) });
     const hits = res.hits.hits;
     for (const h of hits) if (h._source) yield h._source;
     if (hits.length < 500) return;

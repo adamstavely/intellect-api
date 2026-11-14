@@ -1,4 +1,5 @@
 import type { Client } from '@elastic/elasticsearch';
+import { SearchUnavailableError } from '../common/es';
 import type { Gap, Work } from '../model/types';
 import { TopicRollupService } from './topic-rollup.service';
 
@@ -37,5 +38,23 @@ describe('TopicRollupService.compute', () => {
     expect(rollup.health).not.toBe('healthy');
     expect(rollup.healthScore).toBe(0);
     expect(es.closePointInTime).toHaveBeenCalledTimes(4);
+  });
+});
+
+type Mocks = { search: jest.Mock; count: jest.Mock };
+
+describe('TopicRollupService.recompute with partial results', () => {
+  const topic = { found: true, _seq_no: 1, _primary_term: 1, _source: { id: 't', health: 'at-risk', healthScore: 20 } };
+  const failedShard = { total: 2, successful: 1, failed: 1, failures: [{ shard: 0, index: 'gaps-v1', reason: { type: 'node_not_connected_exception' } }] };
+
+  it.each([
+    ['a gap page that timed out', (es: Mocks) => es.search.mockResolvedValueOnce({ timed_out: true, hits: { hits: [] } })],
+    ['a gap page missing a failed shard', (es: Mocks) => es.search.mockResolvedValueOnce({ _shards: failedShard, hits: { hits: [] } })],
+    ['a question count missing a failed shard', (es: Mocks) => es.count.mockResolvedValueOnce({ count: 0, _shards: failedShard })],
+  ])('stores nothing after %s, rather than a healthy rollup of an empty topic', async (_, partial) => {
+    const es = { ...pagedEs({}), get: jest.fn().mockResolvedValue(topic), update: jest.fn() };
+    partial(es);
+    await expect(new TopicRollupService(es as unknown as Client).recompute('t', '2026-11-08')).rejects.toThrow(SearchUnavailableError);
+    expect(es.update).not.toHaveBeenCalled();
   });
 });

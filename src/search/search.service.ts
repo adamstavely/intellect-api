@@ -5,6 +5,7 @@ import { ALIASES } from '../elastic/indices';
 import type { Gap, Paper, Person, Topic } from '../model/types';
 import { ScopeService } from '../scope/scope.service';
 import type { SearchHitDto, SearchQueryDto, SearchResultsDto } from './search.dto';
+import { msearch } from '../common/es';
 
 /** ⌘K search: one msearch over topics, gaps, papers and people, scoped like everything else. */
 @Injectable()
@@ -28,7 +29,7 @@ export class SearchService {
       query: { bool: { must: [query], filter: [filter] } },
     });
 
-    const { responses } = await this.es.msearch({
+    const responses = await msearch(this.es, {
       searches: [
         { index: ALIASES.topics },
         body(match(['name^3', 'summary'], [{ term: { tags: { value: text, case_insensitive: true, boost: 2 } } }]), ScopeService.toFilter(scope, 'id')),
@@ -40,11 +41,8 @@ export class SearchService {
         body(match(['name']), ScopeService.peopleFilter(scope, user)),
       ],
     });
-    const hits = <T>(i: number): { _source: T; _score: number }[] => {
-      const r = responses[i];
-      if ('error' in r) throw new Error(`search failed: ${JSON.stringify(r.error)}`);
-      return r.hits.hits.map((h) => ({ _source: h._source as T, _score: h._score ?? 0 }));
-    };
+    const hits = <T>(i: number): { _source: T; _score: number }[] =>
+      responses[i].hits.hits.map((h) => ({ _source: h._source as T, _score: h._score ?? 0 }));
     const hit = (id: string, label: string, detail: string, topicId: string | null, score: number): SearchHitDto => ({ id, label, detail, topicId, score });
 
     return {

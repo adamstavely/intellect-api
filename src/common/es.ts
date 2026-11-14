@@ -1,4 +1,97 @@
-import type { Client, estypes } from '@elastic/elasticsearch';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { errors, type Client, type estypes } from '@elastic/elasticsearch';
+
+/**
+ * Elasticsearch couldn't give a complete answer: a search timed out, some shards failed, or the cluster was
+ * unavailable or overloaded. Retriable, and never mistaken for a smaller result: the API answers 503, and nothing
+ * computed from the read (analytics, rollups) is returned or stored.
+ */
+export class SearchUnavailableError extends ServiceUnavailableException {
+  constructor(detail: string, options?: { cause?: unknown }) {
+    super(`Search temporarily unavailable, try again: ${detail}`, options);
+  }
+}
+
+type Shards = Pick<estypes.ShardStatistics, 'total' | 'failed' | 'failures'>;
+
+/** Throws `SearchUnavailableError` unless a search, count or aggregation response covers every shard in time. */
+export function assertComplete(res: { timed_out?: boolean; _shards?: Shards }, what = 'search'): void {
+  if (res.timed_out) throw new SearchUnavailableError(`${what} timed out`);
+  const failed = res._shards?.failed ?? 0;
+  if (failed > 0) {
+    const reason = res._shards?.failures?.[0]?.reason;
+    throw new SearchUnavailableError(`${what} failed on ${failed} of ${res._shards?.total ?? '?'} shards${reason ? ` (${reason.type}: ${reason.reason ?? ''})` : ''}`);
+  }
+}
+
+/**
+ * Whether an Elasticsearch error status means "not now" rather than "never": overload, unavailability, or – with
+ * partial results refused – a shard failure, which comes back as a search_phase_execution_exception.
+ */
+const retriable = (status: number, type: string | undefined) =>
+  status === 429 || status === 502 || status === 503 || status === 504 || (type === 'search_phase_execution_exception' && status >= 500);
+
+/** `SearchUnavailableError` for errors worth a retry (see `retriable`, plus timeouts and lost connections); others as they are. */
+function unavailable(err: unknown, what: string): unknown {
+  if (err instanceof errors.ResponseError) {
+    const status = err.statusCode ?? 0;
+    if (retriable(status, (err.body as { error?: { type?: string } } | undefined)?.error?.type)) {
+      return new SearchUnavailableError(`${what} failed with ${status}`, { cause: err });
+    }
+  } else if (err instanceof errors.ConnectionError || err instanceof errors.TimeoutError || err instanceof errors.NoLivingConnectionsError) {
+    return new SearchUnavailableError(`${what} could not reach Elasticsearch`, { cause: err });
+  }
+  return err;
+}
+
+/**
+ * The one way to search here: partial results are refused (`allow_partial_search_results: false`), and a response
+ * that timed out or skipped failed shards anyway is rejected, so a failed shard never reads as "no matches".
+ */
+export async function search<TDoc = unknown, TAggs = Record<string, estypes.AggregationsAggregate>>(
+  es: Client,
+  req: estypes.SearchRequest,
+): Promise<estypes.SearchResponse<TDoc, TAggs>> {
+  let res: estypes.SearchResponse<TDoc, TAggs>;
+  try {
+    res = await es.search<TDoc, TAggs>({ allow_partial_search_results: false, ...req });
+  } catch (err) {
+    throw unavailable(err, 'search');
+  }
+  assertComplete(res);
+  return res;
+}
+
+/** A count, checked like `search`: a count that missed failed shards would be an undercount. */
+export async function count(es: Client, req: estypes.CountRequest): Promise<estypes.CountResponse> {
+  let res: estypes.CountResponse;
+  try {
+    res = await es.count(req);
+  } catch (err) {
+    throw unavailable(err, 'count');
+  }
+  assertComplete(res, 'count');
+  return res;
+}
+
+/** A multi-search, each search checked like `search`; one that failed outright throws too. */
+export async function msearch<TDoc = unknown>(es: Client, req: estypes.MsearchRequest): Promise<estypes.SearchResponseBody<TDoc>[]> {
+  const searches = req.searches?.map((s, i) => (i % 2 === 0 ? { allow_partial_search_results: false, ...s } : s));
+  let res: estypes.MsearchResponse<TDoc>;
+  try {
+    res = await es.msearch<TDoc>({ ...req, ...(searches ? { searches } : {}) });
+  } catch (err) {
+    throw unavailable(err, 'msearch');
+  }
+  return res.responses.map((r, i) => {
+    if ('error' in r) {
+      const detail = `search ${i} failed with ${r.status}: ${r.error.type}: ${r.error.reason ?? ''}`;
+      throw retriable(r.status, r.error.type) ? new SearchUnavailableError(detail) : new Error(detail);
+    }
+    assertComplete(r, `search ${i}`);
+    return r;
+  });
+}
 
 /** `_source` of every hit. */
 export const sources = <T>(res: { hits: { hits: { _source?: T }[] } }): T[] =>
@@ -29,7 +122,8 @@ export const PAGE_SIZE = 1000;
 /**
  * Every hit of a query, read a page at a time through a point in time (search_after, with `_shard_doc` breaking ties),
  * so nothing is cut off at a result window and the pages are one consistent snapshot. With a `sort`, Elasticsearch
- * orders the whole result, not just one window of it.
+ * orders the whole result, not just one window of it. Every page is checked (see `search`): a partial page throws
+ * rather than ending the read early.
  */
 export async function searchAll<T>(
   es: Client,
@@ -38,11 +132,18 @@ export async function searchAll<T>(
   pageSize = PAGE_SIZE,
 ): Promise<T[]> {
   const { sort = [], ...rest } = body;
-  let id = (await es.openPointInTime({ index, keep_alive: '1m' })).id;
+  let pit: estypes.OpenPointInTimeResponse;
+  try {
+    pit = await es.openPointInTime({ index, keep_alive: '1m' });
+  } catch (err) {
+    throw unavailable(err, 'open point in time');
+  }
+  assertComplete(pit, 'open point in time');
+  let id = pit.id;
   const out: T[] = [];
   try {
     for (let after: estypes.SortResults | undefined; ; ) {
-      const res = await es.search<T>({
+      const res = await search<T>(es, {
         ...rest,
         pit: { id, keep_alive: '1m' },
         size: pageSize,
@@ -72,7 +173,7 @@ export async function readAll<T>(
   index: string,
   body: Pick<estypes.SearchRequest, 'query' | '_source'> & { sort?: estypes.SortCombinations[] },
 ): Promise<T[]> {
-  const first = await es.search<T>({ index, ...body, size: MAX_DOCS, track_total_hits: true });
+  const first = await search<T>(es, { index, ...body, size: MAX_DOCS, track_total_hits: true });
   const total = first.hits.total;
   const complete = typeof total === 'object' && total.relation === 'gte' ? false : first.hits.hits.length >= totalHits(first);
   return complete ? sources(first) : searchAll<T>(es, index, body);

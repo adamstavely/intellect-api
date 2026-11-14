@@ -1,5 +1,5 @@
 import type { Client } from '@elastic/elasticsearch';
-import { chunks } from '../common/es';
+import { chunks, search } from '../common/es';
 import { ALIASES } from '../elastic/indices';
 
 /**
@@ -35,7 +35,7 @@ export async function firstCitedMonths(es: Client, paperIds: string[]): Promise<
   const out = new Map<string, string>();
   // In slices, so any number of papers fits a terms query and aggregation.
   for (const ids of chunks([...new Set(paperIds)])) {
-    const res = await es.search({
+    const res = await search(es, {
       index: ALIASES.paperMetrics,
       size: 0,
       query: { bool: { filter: [{ terms: { paperId: ids } }, { range: { citations: { gt: 0 } } }] } },

@@ -1,6 +1,7 @@
 import type { Client } from '@elastic/elasticsearch';
 import { ALIASES } from '../elastic/indices';
 import type { RecentPapers } from '../model/types';
+import { search } from '../common/es';
 
 export const NO_RECENT_PAPERS: RecentPapers = { lastMonth: 0, thisMonth: 0 };
 
@@ -18,7 +19,7 @@ export function monthWindows(today: string) {
 export async function recentPaperCounts(es: Client, topicIds: string[], today: string): Promise<Map<string, RecentPapers>> {
   if (topicIds.length === 0) return new Map();
   const { lastMonth, thisMonth } = monthWindows(today);
-  const res = await es.search({
+  const res = await search(es, {
     index: ALIASES.papers,
     size: 0,
     query: { bool: { filter: [{ terms: { topicId: topicIds } }, { range: { published: { gte: lastMonth.from, lte: thisMonth.to } } }] } },
