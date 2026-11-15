@@ -2,7 +2,8 @@ import type { Client } from '@elastic/elasticsearch';
 
 /**
  * An in-memory Elasticsearch for unit tests that need more records than one result window: documents per index, and
- * just enough of the query DSL, sorting, points in time, search_after and terms aggregations for the services' reads.
+ * just enough of the query DSL, sorting, points in time, search_after and terms, composite and top_metrics aggregations
+ * for the services' reads.
  * Like Elasticsearch, an ordinary search returns at most `size` hits (10 by default) and reports the total.
  */
 export function fakeEs(indices: Record<string, object[]> = {}) {
@@ -135,11 +136,27 @@ function aggregate(docs: object[], aggs: Record<string, any>): Record<string, un
           const v = kind === 'max' ? vs.at(-1) : vs[0];
           return [name, typeof v === 'string' ? { value: v === undefined ? null : 0, value_as_string: v } : { value: v ?? null }];
         }
+        case 'top_metrics': {
+          const [[by, order]] = Object.entries<string>(body.sort);
+          const top = docs.filter((d) => values(d, by).length).sort((a, b) => compare(get(a, by), get(b, by)) * (order === 'desc' ? -1 : 1))[0];
+          return [name, { top: top ? [{ sort: [get(top, by)], metrics: { [body.metrics.field]: get(top, body.metrics.field) ?? null } }] : [] }];
+        }
         case 'terms': {
           const groups = new Map<unknown, object[]>();
           for (const d of docs) for (const v of values(d, body.field)) (groups.get(v) ?? groups.set(v, []).get(v)!).push(d);
           const buckets = [...groups].slice(0, body.size ?? 10).map(([key, ds]) => ({ key, doc_count: ds.length, ...(sub ? aggregate(ds, sub) : {}) }));
           return [name, { buckets }];
+        }
+        case 'composite': {
+          // One terms source is enough for the services' reads.
+          const [[source, { terms }]] = body.sources.map((s: object) => Object.entries(s)[0]) as [string, { terms: { field: string } }][];
+          const groups = new Map<unknown, object[]>();
+          for (const d of docs) for (const v of values(d, terms.field)) (groups.get(v) ?? groups.set(v, []).get(v)!).push(d);
+          const keys = [...groups.keys()].sort(compare).filter((k) => !body.after || compare(k, body.after[source]) > 0);
+          const buckets = keys
+            .slice(0, body.size ?? 10)
+            .map((k) => ({ key: { [source]: k }, doc_count: groups.get(k)!.length, ...(sub ? aggregate(groups.get(k)!, sub) : {}) }));
+          return [name, { buckets, ...(buckets.length ? { after_key: buckets.at(-1)!.key } : {}) }];
         }
         default:
           throw new Error(`fakeEs: unsupported aggregation ${kind}`);

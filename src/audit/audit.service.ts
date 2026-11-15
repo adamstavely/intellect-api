@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
+import { BeforeApplicationShutdown, Inject, Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from '@elastic/elasticsearch';
 import type { AuditConfig } from '../config/configuration';
@@ -24,8 +24,14 @@ const retryable = (status: number) => status === 429 || status >= 500;
 
 /**
  * Writes audit events to the append-only `audit` index. Requests don't wait on it: events queue in memory and are
- * bulk-written every second (sooner when the queue fills), and the queue is drained on shutdown – after the HTTP
- * server has finished its last requests, and before the Elasticsearch client closes.
+ * bulk-written every second (sooner when the queue fills), and the queue is drained on shutdown – after every request
+ * begun has been recorded, and before the Elasticsearch client closes.
+ *
+ * Each request is tracked from when it arrives until its event is recorded (`begin`), independently of its
+ * connection: a handler still running after its client left keeps shutdown waiting for it, though the HTTP server no
+ * longer does. Shutdown has one deadline (`AUDIT_SHUTDOWN_TIMEOUT_MS`) from when it begins: no new handler starts,
+ * requests running get until shortly before it to finish, and any that haven't are recorded then as `unresolved`, so
+ * an attempt is never lost; the queue is then drained in what's left.
  *
  * A failed write is retried, whether the whole request failed or only some items in it (429s, 5xx). An event that
  * can't be written – a permanent rejection, `MAX_ATTEMPTS` failures, a full backlog (`maxQueue` events waiting), or
@@ -33,7 +39,7 @@ const retryable = (status: number) => status === 429 || status >= 500;
  * silently. That log is the fallback: every event ends up either confirmed written or logged there.
  */
 @Injectable()
-export class AuditService implements OnApplicationShutdown {
+export class AuditService implements BeforeApplicationShutdown, OnApplicationShutdown {
   readonly #log = new Logger('Audit');
   #queue: AuditEvent[] = [];
   /** Taken off the queue for a write that hasn't confirmed them yet: the one in flight, or one waiting its turn. */
@@ -49,6 +55,14 @@ export class AuditService implements OnApplicationShutdown {
   #stopping = false;
   #drained = false;
   #draining: Promise<void> | undefined;
+  /** Requests not yet recorded, each by what records it as unresolved should shutdown stop waiting for it. */
+  readonly #active = new Set<() => void>();
+  /** Lets the drain go on once no request is left to record. */
+  #idle: (() => void) | undefined;
+  /** Shutdown's deadline, and the earlier one for requests still running; both set when shutdown begins. */
+  #expired: Promise<'expired'> = new Promise(() => undefined);
+  #expireTimer: NodeJS.Timeout | undefined;
+  #settleTimer: NodeJS.Timeout | undefined;
 
   constructor(
     @Inject(ES_CLIENT) private readonly es: Client,
@@ -75,6 +89,23 @@ export class AuditService implements OnApplicationShutdown {
     this.#queue.push(event);
     if (this.#queue.length >= MAX_BATCH) void this.flush();
     else this.#timer ??= setTimeout(() => void this.flush(), FLUSH_MS);
+  }
+
+  /**
+   * Tracks a request from when it arrives until its event is recorded: call what this returns once it is. Should
+   * shutdown's deadline for running requests pass first, `unresolved` is called to record it without an outcome.
+   */
+  begin(unresolved: () => void): () => void {
+    this.#active.add(unresolved);
+    return () => {
+      this.#active.delete(unresolved);
+      if (!this.#active.size) this.#idle?.();
+    };
+  }
+
+  /** Shutdown has begun: no new handler is started (see AuditInterceptor), though those running may finish. */
+  get stopping(): boolean {
+    return this.#stopping;
   }
 
   /** Writes whatever is queued. Events are created, never updated, so a replayed id fails rather than overwrites. */
@@ -149,34 +180,79 @@ export class AuditService implements OnApplicationShutdown {
     this.#log.error(`Audit event ${event.id} not written (${why}); event: ${JSON.stringify(event)}`);
   }
 
-  /** Nest's last shutdown phase, after the HTTP server has closed: no request can record an event any more. */
+  /** Before the HTTP server closes: shutdown, and its one deadline, start here. */
+  beforeApplicationShutdown(): void {
+    this.#begin();
+  }
+
+  /** Nest's last shutdown phase, after the HTTP server has closed. */
   onApplicationShutdown(): Promise<void> {
     return this.drain();
   }
 
   /**
-   * Drains the queue before Elasticsearch is closed, within one deadline (`AUDIT_SHUTDOWN_TIMEOUT_MS`) covering the
-   * write already in flight, every queued batch and the retries: a few flushes with short pauses, since a transient
-   * failure puts events back on the queue. At the deadline the write in flight is aborted and every event not
-   * confirmed written – in flight, waiting its turn or queued – is logged in full, like any event given up on, as is
-   * anything recorded afterwards. (An aborted write may still have landed; nothing confirmed it, so its events are
-   * logged too.) Runs once, however often it's called.
+   * Drains the queue before Elasticsearch is closed, within one deadline (`AUDIT_SHUTDOWN_TIMEOUT_MS`, from when
+   * shutdown began) covering the requests still running, the write already in flight, every queued batch and the
+   * retries. Requests still running are waited for until all but one write's time is left; any not done then are
+   * recorded as `unresolved`. Then the queue is flushed a few times with short pauses, since a transient failure puts
+   * events back on it. At the deadline the write in flight is aborted and every event not confirmed written – in
+   * flight, waiting its turn or queued – is logged in full, like any event given up on, as is anything recorded
+   * afterwards. (An aborted write may still have landed; nothing confirmed it, so its events are logged too.) The
+   * deadline holds even if the drain itself never starts, say while the HTTP server waits on a connected client.
+   * Runs once, however often it's called.
    */
   drain(): Promise<void> {
     return (this.#draining ??= this.#drain());
   }
 
-  async #drain(): Promise<void> {
+  /** Stops new handlers and sets the deadlines, once. */
+  #begin(): void {
+    if (this.#stopping) return;
     this.#stopping = true;
     // A little of the budget is kept back for logging what's left, so all of it is done by the deadline.
     const budget = this.#shutdownMs - Math.min(250, this.#shutdownMs / 10);
     this.#deadline = performance.now() + budget;
-    let expire: NodeJS.Timeout | undefined;
-    const expired = new Promise<'expired'>((r) => (expire = setTimeout(() => r('expired'), budget)));
-    const result = await Promise.race([this.#flushAll().then(() => 'flushed' as const), expired]);
-    clearTimeout(expire);
+    // Running requests get all but the time one write takes (or half, on a short budget), so what they come to can
+    // still be written rather than only logged.
+    this.#settleTimer = setTimeout(() => this.#abandon(), budget - Math.min(SHUTDOWN_REQUEST_MS, budget / 2));
+    this.#expired = new Promise<'expired'>(
+      (r) =>
+        (this.#expireTimer = setTimeout(() => {
+          r('expired');
+          this.#finish('expired');
+        }, budget)),
+    );
+  }
 
+  async #drain(): Promise<void> {
+    this.#begin();
+    const settled = this.#active.size ? new Promise<void>((r) => (this.#idle = r)) : Promise.resolve();
+    const result = await Promise.race([settled.then(() => this.#flushAll()).then(() => 'flushed' as const), this.#expired]);
+    this.#finish(result);
+  }
+
+  /** Records every request still running as unresolved: shutdown can't wait for them any longer. */
+  #abandon(): void {
+    const left = [...this.#active];
+    this.#active.clear();
+    for (const unresolved of left) {
+      try {
+        unresolved();
+      } catch (err) {
+        this.#log.error(`Could not record an unresolved request: ${(err as Error).message}`);
+      }
+    }
+    this.#idle?.();
+  }
+
+  /** Gives up on whatever isn't confirmed written, logging it in full; from now on events go straight to the log. */
+  #finish(result: 'flushed' | 'expired'): void {
+    if (this.#drained) return;
+    // Anything still running when the deadline came is recorded, and so logged with the rest.
+    if (result === 'expired') this.#abandon();
     this.#drained = true;
+    clearTimeout(this.#settleTimer);
+    clearTimeout(this.#expireTimer);
     clearTimeout(this.#timer);
     this.#timer = undefined;
     this.#inFlight?.abort();

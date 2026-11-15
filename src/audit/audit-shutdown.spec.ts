@@ -7,6 +7,7 @@ import { auditOptions } from '../config/configuration';
 import { ElasticModule, ES_CLIENT } from '../elastic/elastic.module';
 import type { AuditEvent } from './audit-event';
 import { AuditModule } from './audit.module';
+import { AuditService } from './audit.service';
 
 /** A request still in flight when shutdown starts: it answers when the test lets it. */
 @Controller('slow')
@@ -40,6 +41,8 @@ describe('audit on shutdown, in the app', () => {
   };
 
   beforeEach(async () => {
+    order.length = 0;
+    es.bulk.mockClear();
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -80,5 +83,20 @@ describe('audit on shutdown, in the app', () => {
     expect(JSON.parse(await response)).toEqual({ ok: true });
     await closing;
     expect(order).toEqual(['write /slow', 'close']);
+  });
+
+  it('starts no new handler once shutdown has begun: the request is refused with a 503, and audited as such', async () => {
+    app.get(AuditService).beforeApplicationShutdown();
+    const { port } = app.getHttpServer().address() as AddressInfo;
+    const status = await new Promise<number | undefined>((resolve, reject) =>
+      get({ port, host: '127.0.0.1', path: '/slow', agent: false }, (res) => {
+        res.resume();
+        res.on('end', () => resolve(res.statusCode));
+      }).on('error', reject),
+    );
+    expect(status).toBe(503);
+    await app.close();
+    expect(order).toEqual(['write /slow', 'close']);
+    expect(es.bulk.mock.calls.at(-1)?.[0].operations[1]).toMatchObject({ outcome: { status: 503, delivery: 'completed' } });
   });
 });

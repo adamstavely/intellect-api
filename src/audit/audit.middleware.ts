@@ -1,4 +1,4 @@
-import { CallHandler, ExecutionContext, HttpException, Injectable, Logger, NestInterceptor, NestMiddleware } from '@nestjs/common';
+import { CallHandler, ExecutionContext, HttpException, Injectable, Logger, NestInterceptor, NestMiddleware, ServiceUnavailableException } from '@nestjs/common';
 import { HTTP_CODE_METADATA } from '@nestjs/common/constants';
 import type { NextFunction, Response } from 'express';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +26,9 @@ type AuditedRequest = RequestWithUser & { [STATE]?: AuditState };
  * the client goes away first (`aborted`). An aborted request is recorded with what its handler did – waiting for it to
  * finish if it's still running, so a write it commits after the client left is still on the trail – or, if no handler
  * had started, with no status at all: a dropped connection alone says nothing about what was or wasn't written.
+ *
+ * The audit service tracks each request until it's recorded, connection or not, so shutdown waits for a handler
+ * whose client has left as for any other; one still running at shutdown's deadline is recorded as `unresolved`.
  */
 @Injectable()
 export class AuditMiddleware implements NestMiddleware {
@@ -51,8 +54,12 @@ export class AuditMiddleware implements NestMiddleware {
         this.#record(req, id, path, status, delivery, startedWall, startedAt);
       } catch (err) {
         this.#log.error(`Could not audit request ${id}: ${(err as Error).message}`);
+      } finally {
+        end();
       }
     };
+    // Shutdown can't wait any longer: what the request came to is unknown, and the trail says so.
+    const end = this.audit.begin(() => record(null, 'unresolved'));
     res.on('finish', () => record(res.statusCode, 'completed'));
     // Also emitted after 'finish'; on its own, the connection closed before the response was complete.
     res.on('close', () => {
@@ -99,10 +106,13 @@ const statusOf = (err: unknown) => (err instanceof HttpException ? err.getStatus
  * Notes, for the audit trail, the status each handler's result comes to – independently of whether the response then
  * reaches the client – so a request whose client went away is still recorded with what it did (see AuditMiddleware).
  * A request whose client left before its handler started isn't run at all: the trail already says it was aborted
- * with no outcome, and that stays true.
+ * with no outcome, and that stays true. Nor is one whose handler would start once shutdown has begun: it's refused
+ * with a 503, so no new work starts that shutdown would then have to wait for.
  */
 @Injectable()
 export class AuditInterceptor implements NestInterceptor {
+  constructor(private readonly audit: AuditService) {}
+
   intercept(ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (ctx.getType() !== 'http') return next.handle();
     const req = ctx.switchToHttp().getRequest<AuditedRequest>();
@@ -110,6 +120,7 @@ export class AuditInterceptor implements NestInterceptor {
     if (!state) return next.handle();
     // 499: nginx's "client closed request". Nobody receives it; it only keeps the handler from running.
     if (state.abandoned) throw new HttpException('Client closed request', 499);
+    if (this.audit.stopping) throw new ServiceUnavailableException('Shutting down, try again');
 
     const success = (Reflect.getMetadata(HTTP_CODE_METADATA, ctx.getHandler()) as number | undefined) ?? (req.method === 'POST' ? 201 : 200);
     let settle!: (status: number | null) => void;

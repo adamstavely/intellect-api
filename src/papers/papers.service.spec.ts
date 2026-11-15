@@ -70,3 +70,61 @@ describe('PapersService past one result window', () => {
     expect(history.papers.current).toBe(10_002);
   });
 });
+
+describe('PapersService attention score', () => {
+  /** A month of metrics with the attention score at its end. */
+  const attention = (paperId: string, month: string, altmetric: number, views = 1) => ({ ...metrics(paperId, month, views), altmetric });
+  const papersOf = (rows: object[]) =>
+    new PapersService(
+      fakeEs({ topics: [{ id: 't-1', name: 'One' }], papers: [paper('p-down', '2026-01-01'), paper('p-zero', '2026-01-01')], 'paper-metrics': rows }).client,
+      new ScopeService(fakeEs().client),
+      clock,
+      {} as TopicRollupService,
+    );
+  const rows = [
+    attention('p-down', '2026-10', 100),
+    attention('p-down', '2026-11', 40),
+    // Corrected to zero: the latest score stands, however high it once was.
+    attention('p-zero', '2026-09', 70),
+    attention('p-zero', '2026-10', 0),
+  ];
+  const byId = <T extends { id: string }>(xs: T[]) => new Map(xs.map((x) => [x.id, x]));
+
+  it('is the latest month’s score, not the highest, when it falls or is corrected to zero', async () => {
+    const list = byId(await papersOf(rows).list(chief, {}));
+    expect(list.get('p-down')!.totals).toMatchObject({ altmetric: 40, views: 2 });
+    expect(list.get('p-zero')!.totals).toMatchObject({ altmetric: 0, views: 2 });
+  });
+
+  it('is the score of the period’s last month within a period', async () => {
+    const list = byId(await papersOf(rows).list(chief, { period: '2026-10' }));
+    expect(list.get('p-down')!.periodTotals).toMatchObject({ altmetric: 100, views: 1 });
+    expect(list.get('p-zero')!.periodTotals).toMatchObject({ altmetric: 0, views: 1 });
+  });
+
+  it('is the latest month’s in the top papers too, lifetime and in the period', async () => {
+    const top = byId(await papersOf(rows).top(chief, { period: 'FY27', limit: 2 }));
+    expect(top.get('p-down')).toMatchObject({ totals: { altmetric: 40 }, periodTotals: { altmetric: 40 } });
+    expect(top.get('p-zero')).toMatchObject({ totals: { altmetric: 0 }, periodTotals: { altmetric: 0 } });
+  });
+});
+
+describe('PapersService top papers', () => {
+  it('ranks every paper in the period, over more papers than one page of buckets', async () => {
+    const many = Array.from({ length: 2500 }, (_, i) => `p${String(i).padStart(4, '0')}`);
+    const store = fakeEs({
+      topics: [{ id: 't-1', name: 'One' }],
+      papers: many.map((id) => paper(id, '2026-01-01')),
+      'paper-metrics': [...many.map((id, i) => metrics(id, '2026-10', i % 7)), metrics('p2400', '2026-11', 50), metrics('p0003', '2026-11', 40)],
+    });
+    const papers = new PapersService(store.client, new ScopeService(store.client), clock, {} as TopicRollupService);
+    const top = await papers.top(chief, { period: 'FY27', limit: 3 });
+    expect(top.map((p) => [p.id, p.periodTotals.views])).toEqual([
+      ['p2400', 50 + (2400 % 7)],
+      ['p0003', 43],
+      ['p0006', 6],
+    ]);
+    // Three pages of 1,000 papers each
+    expect(store.es.search.mock.calls.filter(([r]) => (r as { aggs?: { page?: object } }).aggs?.page)).toHaveLength(3);
+  });
+});

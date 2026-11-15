@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Client, estypes } from '@elastic/elasticsearch';
 import { Clock } from '../common/clock';
-import { chunks, getMany, readAll, search } from '../common/es';
+import { chunks, compositePages, getMany, readAll, search } from '../common/es';
 import { parsePeriod } from '../common/period';
 import { ES_CLIENT } from '../elastic/elastic.module';
 import { ALIASES } from '../elastic/indices';
@@ -14,36 +14,41 @@ import type { FirstCitationQueryDto, FirstCitationSummaryDto, GradePaperDto, Met
 const EMPTY_TOTALS: MetricTotalsDto = { downloads: 0, views: 0, citations: 0, altmetric: 0, mentions: { news: 0, policy: 0, social: 0, patents: 0 } };
 
 type SumAgg = { value: number | null };
-type TotalsBucket = {
-  key: string;
+type LatestAgg = { top: { metrics: { altmetric: number | null } }[] };
+/** One paper's metrics, as TOTALS_AGGS computes them. */
+type Totals = {
   downloads: SumAgg;
   views: SumAgg;
   citations: SumAgg;
-  altmetric: SumAgg;
+  altmetric: LatestAgg;
   news: SumAgg;
   policy: SumAgg;
   social: SumAgg;
   patents: SumAgg;
 };
 
+/**
+ * A paper's metrics over a set of months: counts are monthly increments, so they're summed; the attention score is a
+ * level, so it's the latest month's – not the highest, since a score can fall, or be corrected to zero.
+ */
 const TOTALS_AGGS: Record<string, estypes.AggregationsAggregationContainer> = {
   downloads: { sum: { field: 'downloads' } },
   views: { sum: { field: 'views' } },
   citations: { sum: { field: 'citations' } },
-  altmetric: { max: { field: 'altmetric' } },
+  altmetric: { top_metrics: { metrics: { field: 'altmetric' }, sort: { month: 'desc' } } },
   news: { sum: { field: 'mentions.news' } },
   policy: { sum: { field: 'mentions.policy' } },
   social: { sum: { field: 'mentions.social' } },
   patents: { sum: { field: 'mentions.patents' } },
 };
 
-const toTotals = (b: TotalsBucket): MetricTotalsDto => {
+const toTotals = (b: Totals): MetricTotalsDto => {
   const v = (a: SumAgg) => Math.round(a.value ?? 0);
   return {
     downloads: v(b.downloads),
     views: v(b.views),
     citations: v(b.citations),
-    altmetric: v(b.altmetric),
+    altmetric: Math.round(b.altmetric.top[0]?.metrics.altmetric ?? 0),
     mentions: { news: v(b.news), policy: v(b.policy), social: v(b.social), patents: v(b.patents) },
   };
 };
@@ -90,7 +95,7 @@ export class PapersService {
     return items.map((p) => ({ ...p, periodTotals: inPeriod.get(p.id) ?? EMPTY_TOTALS }));
   }
 
-  /** Each paper's metrics summed over the period's months. */
+  /** Each paper's metrics summed over the period's months; its attention score as of the latest of them. */
   private periodTotals(paperIds: string[], period: { fromMonth: string; toMonth: string }): Promise<Map<string, MetricTotalsDto>> {
     return this.sumMetrics(paperIds, [{ range: { month: { gte: period.fromMonth, lte: period.toMonth } } }]);
   }
@@ -108,26 +113,39 @@ export class PapersService {
         query: { bool: { filter: [{ terms: { paperId: ids } }, ...filter] } },
         aggs: { papers: { terms: { field: 'paperId', size: ids.length }, aggs: TOTALS_AGGS } },
       });
-      const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
+      const buckets = (res.aggregations?.papers as { buckets: (Totals & { key: string })[] } | undefined)?.buckets ?? [];
       for (const b of buckets) out.set(b.key, toTotals(b));
     }
     return out;
   }
 
-  /** Most-read papers (by views) within the period: the dashboard's "Impact pulse". */
+  /**
+   * Most-read papers (by views) within the period: the dashboard's "Impact pulse". Every paper's views in the period
+   * are summed exactly (a composite aggregation, paged), then the top few kept: a terms aggregation ordered by views
+   * would pick each shard's leaders separately, and miss a paper whose reads are spread over several shards.
+   */
   async top(user: Person, q: TopPapersQueryDto): Promise<TopPaperDto[]> {
     const period = parsePeriod(q.period, this.clock.today());
-    const res = await search(this.es, {
-      index: ALIASES.paperMetrics,
-      size: 0,
-      query: { bool: { filter: [await this.scope.filter(user), { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },
-      aggs: { papers: { terms: { field: 'paperId', size: q.limit ?? 3, order: { views: 'desc' } }, aggs: TOTALS_AGGS } },
-    });
-    const buckets = (res.aggregations?.papers as { buckets: TotalsBucket[] } | undefined)?.buckets ?? [];
-    const ids = buckets.map((b) => b.key);
+    const limit = q.limit ?? 3;
+    // Most views first, then by id, as a terms aggregation would break the tie.
+    const ranked = (a: { id: string; totals: MetricTotalsDto }, b: { id: string; totals: MetricTotalsDto }) =>
+      b.totals.views - a.totals.views || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    let leaders: { id: string; totals: MetricTotalsDto }[] = [];
+    for await (const page of compositePages<{ paperId: string }, Totals>(
+      this.es,
+      {
+        index: ALIASES.paperMetrics,
+        query: { bool: { filter: [await this.scope.filter(user), { range: { month: { gte: period.fromMonth, lte: period.toMonth } } }] } },
+      },
+      { paperId: { terms: { field: 'paperId' } } },
+      TOTALS_AGGS,
+    )) {
+      leaders = [...leaders, ...page.map((b) => ({ id: b.key.paperId, totals: toTotals(b) }))].sort(ranked).slice(0, limit);
+    }
+    const ids = leaders.map((l) => l.id);
     const papers = await getMany<Paper>(this.es, ALIASES.papers, ids);
     const items = await this.decorate(ids.map((id) => papers.get(id)).filter((p): p is Paper => !!p), await this.totals(ids));
-    const periodTotals = new Map(buckets.map((b) => [b.key, toTotals(b)]));
+    const periodTotals = new Map(leaders.map((l) => [l.id, l.totals]));
     return items.map((p) => ({ ...p, periodTotals: periodTotals.get(p.id) ?? EMPTY_TOTALS }));
   }
 
