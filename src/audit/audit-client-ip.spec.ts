@@ -47,7 +47,7 @@ describe('the audited client address', () => {
       .overrideProvider(ES_CLIENT)
       .useValue({ close: () => Promise.resolve() })
       .overrideProvider(AuditService)
-      .useValue({ record })
+      .useValue({ record, begin: () => () => undefined, stopping: false })
       .compile();
     const app = moduleRef.createNestApplication<NestExpressApplication>({ logger: false });
     configureApp(app);

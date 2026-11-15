@@ -179,6 +179,33 @@ export async function readAll<T>(
   return complete ? sources(first) : searchAll<T>(es, index, body);
 }
 
+/** A composite aggregation's bucket: its key has a value per source, and `T` is its sub-aggregations' results. */
+export type CompositeBucket<K extends Record<string, unknown>, T> = T & { key: K; doc_count: number };
+
+/**
+ * Every bucket of a composite aggregation over a query, a page at a time (`after_key`), each page checked like
+ * `search`. Unlike a terms aggregation ordered by a metric, which picks each shard's leaders separately and can miss a
+ * key counted on several shards, every key is returned with its metrics summed over every shard; ranking is then the
+ * caller's, over exact figures. Pages are separate searches, not one snapshot.
+ */
+export async function* compositePages<K extends Record<string, unknown>, T>(
+  es: Client,
+  req: Pick<estypes.SearchRequest, 'index' | 'query'>,
+  sources: Record<keyof K & string, estypes.AggregationsCompositeAggregationSource>,
+  aggs: Record<string, estypes.AggregationsAggregationContainer>,
+  pageSize = PAGE_SIZE,
+): AsyncGenerator<CompositeBucket<K, T>[]> {
+  const composite = { size: pageSize, sources: Object.entries(sources).map(([name, source]) => ({ [name]: source })) };
+  for (let after: estypes.AggregationsCompositeAggregateKey | undefined; ; ) {
+    const res = await search(es, { ...req, size: 0, aggs: { page: { composite: { ...composite, ...(after ? { after } : {}) }, aggs } } });
+    const page = res.aggregations?.page as { buckets: CompositeBucket<K, T>[]; after_key?: estypes.AggregationsCompositeAggregateKey } | undefined;
+    const buckets = page?.buckets ?? [];
+    if (buckets.length) yield buckets;
+    if (buckets.length < pageSize || !page?.after_key) return;
+    after = page.after_key;
+  }
+}
+
 /** Elasticsearch's default result window, and the most buckets one terms aggregation is asked for here. */
 export const MAX_DOCS = 10_000;
 

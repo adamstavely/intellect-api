@@ -42,7 +42,8 @@ export interface AuditEvent {
    * What came of the request. `delivery` says whether the response went out in full (`completed`) or the client went
    * away first (`aborted`: whether it got the answer is unknown). Aborted, `status` is what the handler returned or
    * threw – a write it committed is recorded as such even though the client never heard – and null when no handler
-   * ran (the client left before one started, and none then did): nothing is claimed either way.
+   * ran (the client left before one started, and none then did): nothing is claimed either way. `unresolved`: the
+   * handler was still running when shutdown could wait no longer, so `status` is null and what it did is unknown.
    */
   outcome: { status: number | null; ok: boolean | null; delivery: AuditDelivery };
   durationMs: number;
@@ -50,7 +51,7 @@ export interface AuditEvent {
   userAgent: string | null;
 }
 
-export type AuditDelivery = 'completed' | 'aborted';
+export type AuditDelivery = 'completed' | 'aborted' | 'unresolved';
 
 export const MAX_BODY_BYTES = 4096;
 /** Deeper than this, redaction stops and the value is replaced: a pathological body can't exhaust the stack. */
